@@ -1,0 +1,455 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { MatchdayServer } from "../src/api";
+import { hashPin, randomTokenSecret } from "../src/auth";
+import { MatchdayStore } from "../src/store";
+import { TxtWriter } from "../src/writer";
+import { TeleScoreMirror } from "../src/mirror";
+
+const SECRET = randomTokenSecret();
+const PIN = "1887";
+
+interface TestHarness {
+  dir: string;
+  dbPath: string;
+  outputDir: string;
+  app: MatchdayServer;
+  baseUrl: string;
+  localCheck: (request: Request) => boolean;
+  store: MatchdayStore;
+  writer: TxtWriter;
+  stop: () => Promise<void>;
+}
+
+const TELESCORE_OFF = {
+  enabled: false,
+  watchDir: null,
+  pollMs: 500,
+  adoptTeams: true,
+  adoptScores: true,
+  adoptClock: true,
+  writePeriodFiles: false,
+  processName: null,
+} as const;
+
+async function startApp(options: { local?: boolean } = {}): Promise<TestHarness> {
+  const dir = mkdtempSync(join(tmpdir(), "mc-api-"));
+  const dbPath = join(dir, "matchday.db");
+  const outputDir = join(dir, "obs");
+  const config = {
+    configPath: join(dir, "config.json"),
+    exeDir: dir,
+    outputDir,
+    files: {
+      homeName: "Home Name.txt",
+      homeScore: "Home Score.txt",
+      awayName: "Away Name.txt",
+      awayScore: "Away Score.txt",
+      clock: "Clock.txt",
+    },
+    teleScore: TELESCORE_OFF,
+    openBrowserOnStart: false,
+    port: 0,
+    bind: "127.0.0.1",
+    pinHash: hashPin(PIN),
+    tokenSecret: SECRET,
+    tokenTtlMs: 60_000,
+  } as const;
+  const { store } = MatchdayStore.open(dbPath);
+  const writer = new TxtWriter(outputDir);
+  const localCheck = () => options.local ?? false;
+  const app = new MatchdayServer({ config, store, writer, localCheck });
+  const server = app.start(0);
+  const baseUrl = `http://127.0.0.1:${server.port}`;
+  return {
+    dir,
+    dbPath,
+    outputDir,
+    app,
+    baseUrl,
+    localCheck,
+    store,
+    writer,
+    stop: async () => {
+      await app.stop();
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+async function login(baseUrl: string): Promise<string> {
+  const response = await fetch(`${baseUrl}/api/auth`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pin: PIN }),
+  });
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { token: string };
+  return body.token;
+}
+
+test("health responde sem autenticação", async () => {
+  const harness = await startApp();
+  try {
+    const response = await fetch(`${harness.baseUrl}/api/health`);
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as Record<string, unknown>;
+    assert.equal(body.status, "ok");
+    assert.equal(body.stateVersion, null);
+    assert.equal(body.filesOk, true);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("health expõe OBS e a cena falha de forma isolada quando está desativado", async () => {
+  const harness = await startApp();
+  try {
+    const health = await (await fetch(`${harness.baseUrl}/api/health`)).json() as {
+      obs: { enabled: boolean; connected: boolean };
+    };
+    assert.equal(health.obs.enabled, false);
+    assert.equal(health.obs.connected, false);
+
+    const token = await login(harness.baseUrl);
+    const response = await fetch(`${harness.baseUrl}/api/obs/scene`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ sceneKey: "goal" }),
+    });
+    assert.equal(response.status, 503);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("configuração OBS pode ser alterada e testada pela webapp", async () => {
+  const harness = await startApp();
+  try {
+    const token = await login(harness.baseUrl);
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    const initial = await fetch(`${harness.baseUrl}/api/obs/settings`, { headers });
+    assert.equal(initial.status, 200);
+    const initialBody = await initial.json() as { settings: { passwordSet: boolean; port: number } };
+    assert.equal(initialBody.settings.passwordSet, false);
+    assert.equal(initialBody.settings.port, 4455);
+
+    const saved = await fetch(`${harness.baseUrl}/api/obs/settings`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        enabled: false,
+        host: "192.168.1.20",
+        port: 4456,
+        password: "secret",
+        scenes: {
+          matchscore: "MATCH",
+          goal: "GOAL",
+          sponsors: "SPONSORS",
+        },
+      }),
+    });
+    assert.equal(saved.status, 200);
+    const savedBody = await saved.json() as { settings: { host: string; port: number; passwordSet: boolean }; obs: { enabled: boolean } };
+    assert.equal(savedBody.settings.host, "192.168.1.20");
+    assert.equal(savedBody.settings.port, 4456);
+    assert.equal(savedBody.settings.passwordSet, true);
+    assert.equal(savedBody.obs.enabled, false);
+
+    const persisted = JSON.parse(readFileSync(join(harness.dir, "config.json"), "utf8")) as {
+      obs: { host: string; port: number; password: string };
+    };
+    assert.equal(persisted.obs.host, "192.168.1.20");
+    assert.equal(persisted.obs.port, 4456);
+    assert.equal(persisted.obs.password, "secret");
+
+    const testConnection = await fetch(`${harness.baseUrl}/api/obs/test`, { method: "POST", headers });
+    assert.equal(testConnection.status, 503);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("auth: PIN errado 401, correto dá token; rotas privadas exigem token", async () => {
+  const harness = await startApp();
+  try {
+    const bad = await fetch(`${harness.baseUrl}/api/auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: "000000" }),
+    });
+    assert.equal(bad.status, 401);
+
+    const unauthorized = await fetch(`${harness.baseUrl}/api/state`);
+    assert.equal(unauthorized.status, 401);
+
+    const token = await login(harness.baseUrl);
+    assert.ok(token.length > 20);
+    const state = await fetch(`${harness.baseUrl}/api/state`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(state.status, 200);
+    const body = (await state.json()) as { state: unknown; setupAllowed: boolean };
+    assert.equal(body.state, null);
+    assert.equal(body.setupAllowed, false);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("setup é bloqueado fora do PC local e funciona localmente", async () => {
+  const remote = await startApp({ local: false });
+  try {
+    const token = await login(remote.baseUrl);
+    const blocked = await fetch(`${remote.baseUrl}/api/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ homeTeam: "ACADÉMICA", awayTeam: "CD FEIRENSE" }),
+    });
+    assert.equal(blocked.status, 403);
+  } finally {
+    await remote.stop();
+  }
+
+  const local = await startApp({ local: true });
+  try {
+    const token = await login(local.baseUrl);
+    const response = await fetch(`${local.baseUrl}/api/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ homeTeam: "  Académica ", awayTeam: "cd feirense" }),
+    });
+    assert.equal(response.status, 200);
+    const snapshot = (await response.json()) as { state: { homeTeam: string; awayTeam: string; version: number } };
+    assert.equal(snapshot.state.homeTeam, "ACADÉMICA");
+    assert.equal(snapshot.state.awayTeam, "CD FEIRENSE");
+    assert.equal(snapshot.state.version, 1);
+
+    assert.equal(readFileSync(join(local.outputDir, "Home Name.txt"), "utf8"), "ACADÉMICA");
+    assert.equal(readFileSync(join(local.outputDir, "Away Name.txt"), "utf8"), "CD FEIRENSE");
+    assert.equal(readFileSync(join(local.outputDir, "Home Score.txt"), "utf8"), "0");
+  } finally {
+    await local.stop();
+  }
+});
+
+test("comandos atualizam estado, ficheiros e versão; 409 em versão desatualizada", async () => {
+  const harness = await startApp({ local: true });
+  try {
+    const token = await login(harness.baseUrl);
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    await fetch(`${harness.baseUrl}/api/setup`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ homeTeam: "A", awayTeam: "B" }),
+    });
+
+    const score = await fetch(`${harness.baseUrl}/api/command`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ baseVersion: 1, action: { type: "SCORE", side: "home", delta: 1 } }),
+    });
+    assert.equal(score.status, 200);
+    const scored = (await score.json()) as { state: { homeScore: number; version: number } };
+    assert.equal(scored.state.homeScore, 1);
+    assert.equal(scored.state.version, 2);
+    assert.equal(readFileSync(join(harness.outputDir, "Home Score.txt"), "utf8"), "1");
+
+    const stale = await fetch(`${harness.baseUrl}/api/command`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ baseVersion: 1, action: { type: "SCORE", side: "away", delta: 1 } }),
+    });
+    assert.equal(stale.status, 409);
+    const conflict = (await stale.json()) as { snapshot: { state: { homeScore: number; version: number } } };
+    assert.equal(conflict.snapshot.state.homeScore, 1);
+    assert.equal(conflict.snapshot.state.version, 2);
+
+    const undo = await fetch(`${harness.baseUrl}/api/command`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ baseVersion: 2, action: { type: "UNDO" } }),
+    });
+    assert.equal(undo.status, 200);
+    const undone = (await undo.json()) as { state: { homeScore: number; version: number } };
+    assert.equal(undone.state.homeScore, 0);
+    assert.equal(undone.state.version, 3);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("relógio em contagem sobrevive a reinício (derivado de timestamps)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mc-restart-"));
+  try {
+    const dbPath = join(dir, "matchday.db");
+    const outputDir = join(dir, "obs");
+    const config = {
+      configPath: join(dir, "config.json"),
+      exeDir: dir,
+      outputDir,
+      files: {
+        homeName: "Home Name.txt",
+        homeScore: "Home Score.txt",
+        awayName: "Away Name.txt",
+        awayScore: "Away Score.txt",
+        clock: "Clock.txt",
+      },
+      teleScore: TELESCORE_OFF,
+      openBrowserOnStart: false,
+      port: 0,
+      bind: "127.0.0.1",
+      pinHash: hashPin(PIN),
+      tokenSecret: SECRET,
+      tokenTtlMs: 60_000,
+    } as const;
+
+    const first = MatchdayStore.open(dbPath).store;
+    const writer = new TxtWriter(outputDir);
+    const app = new MatchdayServer({ config, store: first, writer, localCheck: () => true });
+    const server = app.start(0);
+    const baseUrl = `http://127.0.0.1:${server.port}`;
+    const token = await login(baseUrl);
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    await fetch(`${baseUrl}/api/setup`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ homeTeam: "A", awayTeam: "B" }),
+    });
+    await fetch(`${baseUrl}/api/command`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ baseVersion: 1, action: { type: "SET_PERIOD", period: "FIRST_HALF" } }),
+    });
+    await fetch(`${baseUrl}/api/command`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ baseVersion: 2, action: { type: "START_CLOCK" } }),
+    });
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_500));
+    await app.stop();
+    first.close();
+
+    const second = MatchdayStore.open(dbPath).store;
+    const session = second.load();
+    assert.equal(session.state?.clockRunning, true);
+    assert.ok(session.state?.clockStartedAt);
+    const startedAt = Date.parse(session.state.clockStartedAt!);
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    assert.ok(elapsed >= 1);
+    second.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("SSE emite evento de estado no arranque da stream", async () => {
+  const harness = await startApp({ local: true });
+  try {
+    const token = await login(harness.baseUrl);
+    const response = await fetch(`${harness.baseUrl}/api/stream?token=${encodeURIComponent(token)}`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /text\/event-stream/);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    const { value } = await reader.read();
+    const chunk = decoder.decode(value);
+    assert.match(chunk, /event: state/);
+    await reader.cancel();
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("coexistência com TeleScore: adoção externa, autoridade do relógio e convergência", async () => {
+  const harness = await startApp({ local: true });
+  try {
+    const token = await login(harness.baseUrl);
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    const setup = await fetch(`${harness.baseUrl}/api/setup`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ homeTeam: "ACADÉMICA", awayTeam: "CD FEIRENSE" }),
+    });
+    assert.equal(setup.status, 200);
+
+    const mirror = new TeleScoreMirror({
+      watchDir: harness.outputDir,
+      files: {
+        homeName: "Home Name.txt",
+        homeScore: "Home Score.txt",
+        awayName: "Away Name.txt",
+        awayScore: "Away Score.txt",
+        clock: "Clock.txt",
+      },
+      pollMs: 500,
+      adoptTeams: true,
+      adoptScores: true,
+      adoptClock: true,
+    processName: null,
+      getState: () => harness.store.load().state,
+      ownValue: (key) => harness.writer.lastValue(key),
+      invalidateFile: (key) => harness.writer.invalidate(key),
+      applyActions: (actions) => {
+        for (const action of actions) harness.app.applyCommandAction(action);
+      },
+    });
+    harness.app.setTeleScoreStatus(() => mirror.getStatus());
+
+    const getState = async () => {
+      const response = await fetch(`${harness.baseUrl}/api/state`, { headers });
+      const body = (await response.json()) as { state: { version: number; homeScore: number; awayTeam: string; clockBaseSeconds: number; clockRunning: boolean } };
+      return body.state;
+    };
+
+    // "TeleScore" (escritor não atómico) muda o resultado → o app adota.
+    writeFileSync(join(harness.outputDir, "Home Score.txt"), "3", "utf8");
+    mirror.reconcileOnce();
+    assert.equal((await getState()).homeScore, 3);
+    assert.equal(readFileSync(join(harness.outputDir, "Home Score.txt"), "utf8"), "3");
+
+    // Muda a equipa visitante → adotada e normalizada.
+    writeFileSync(join(harness.outputDir, "Away Name.txt"), "cd mafra", "utf8");
+    mirror.reconcileOnce();
+    assert.equal((await getState()).awayTeam, "CD MAFRA");
+
+    // Relógio do app a correr: Clock.txt externo é ignorado e há conflito.
+    const beforeClock = await getState();
+    await fetch(`${harness.baseUrl}/api/command`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ baseVersion: beforeClock.version, action: { type: "SET_PERIOD", period: "FIRST_HALF" } }),
+    });
+    const running = await getState();
+    await fetch(`${harness.baseUrl}/api/command`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ baseVersion: running.version, action: { type: "START_CLOCK" } }),
+    });
+    writeFileSync(join(harness.outputDir, "Clock.txt"), "99:00", "utf8");
+    mirror.reconcileOnce();
+    assert.equal(mirror.getStatus().clockConflict, true);
+    const afterExternal = await getState();
+    assert.notEqual(afterExternal.clockBaseSeconds, 99 * 60);
+    // Push-back: a nossa escrita repõe o nosso relógio no ficheiro.
+    harness.writer.writeState(harness.store.load().state!, Date.now(), false);
+    assert.notEqual(readFileSync(join(harness.outputDir, "Clock.txt"), "utf8"), "99:00");
+
+    // Relógio do app parado: Clock.txt externo é adotado e limitado ao período.
+    const paused = await getState();
+    await fetch(`${harness.baseUrl}/api/command`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ baseVersion: paused.version, action: { type: "PAUSE_CLOCK" } }),
+    });
+    writeFileSync(join(harness.outputDir, "Clock.txt"), "46:00", "utf8");
+    mirror.reconcileOnce();
+    assert.equal((await getState()).clockBaseSeconds, 45 * 60);
+  } finally {
+    await harness.stop();
+  }
+});

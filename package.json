@@ -1,0 +1,19 @@
+{
+  "name": "matchday-control",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Matchday Control - single exe serving the stadium scoreboard over LAN",
+  "scripts": {
+    "dev": "bun run src/server.ts",
+    "start": "bun run src/server.ts",
+    "test": "bun test",
+    "build": "bun run scripts/build.ts",
+    "fonts": "bun run scripts/embed-fonts.ts",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "latest"
+  }
+}

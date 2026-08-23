@@ -1,0 +1,36 @@
+{
+  "outputDir": "scoreboard",
+  "files": {
+    "homeName": "Home Name.txt",
+    "homeScore": "Home Score.txt",
+    "awayName": "Away Name.txt",
+    "awayScore": "Away Score.txt",
+    "clock": "Clock.txt"
+  },
+  "telescore": {
+    "enabled": true,
+    "watchDir": null,
+    "pollMs": 500,
+    "adoptTeams": true,
+    "adoptScores": true,
+    "adoptClock": true,
+    "writePeriodFiles": false,
+    "processName": "TeleScore.exe"
+  },
+  "openBrowserOnStart": true,
+  "port": 8080,
+  "bind": "0.0.0.0",
+  "obs": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 4455,
+    "password": "",
+    "scenes": {
+      "matchscore": "Cena 1 - Matchscore",
+      "goal": "Cena 2 - Golo",
+      "sponsors": "Cena 3 - Sponsors"
+    }
+  },
+  "tokenSecret": "substituir-por-um-segredo-alcatorio-com-32-caracteres",
+  "tokenTtlMs": 43200000
+}
