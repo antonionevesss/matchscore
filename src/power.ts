@@ -3,7 +3,8 @@ import { dlopen, FFIType } from "bun:ffi";
 // SetThreadExecutionState flags from Win32.
 const ES_CONTINUOUS = 0x80000000;
 const ES_SYSTEM_REQUIRED = 0x00000001;
-const KEEP_SYSTEM_AWAKE = ES_CONTINUOUS + ES_SYSTEM_REQUIRED;
+const ES_DISPLAY_REQUIRED = 0x00000002;
+const KEEP_SYSTEM_AWAKE = ES_CONTINUOUS + ES_SYSTEM_REQUIRED + ES_DISPLAY_REQUIRED;
 
 export interface PowerRequest {
   release(): void;
@@ -12,8 +13,8 @@ export interface PowerRequest {
 const NOOP_REQUEST: PowerRequest = { release() {} };
 
 /**
- * Impede suspensão/hibernação automática enquanto o processo está ativo.
- * O ecrã pode continuar a desligar-se segundo o plano de energia do Windows.
+ * Impede suspensão/hibernação e desligamento automático dos ecrãs enquanto o
+ * processo está ativo.
  * Ao terminar o processo, o Windows também elimina automaticamente o pedido.
  */
 export function keepSystemAwake(): PowerRequest {

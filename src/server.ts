@@ -162,7 +162,7 @@ function main(): void {
 
   const server = app.start();
   const powerRequest = keepSystemAwake();
-  console.log("[power] Suspensão e hibernação automáticas desativadas enquanto a app estiver ligada.");
+  console.log("[power] Suspensão, hibernação e desligamento dos ecrãs desativados enquanto a app estiver ligada.");
 
   if (storeResult.restoredFromBackup) {
     console.warn(`[server] Estado restaurado a partir de backup. ${storeResult.startupError ?? ""}`);
