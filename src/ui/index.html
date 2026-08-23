@@ -49,8 +49,6 @@
     input { font: inherit; color: var(--text); }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-    .hidden { display: none !important; }
-
     /* ---------- Header ---------- */
     .header {
       position: sticky;
@@ -140,7 +138,6 @@
     .btn:active:not(:disabled) { transform: scale(.97); }
     .btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
     .btn--danger { background: var(--danger); border-color: var(--danger); color: #fff; }
-    .btn--ghost { background: transparent; }
     .btn--block { width: 100%; }
     .btn--lg { min-height: 56px; font-size: 16px; }
 
@@ -234,8 +231,19 @@
       position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); margin: 0;
       background: var(--surface); color: var(--text); border: 1px solid var(--border);
       border-radius: 18px; padding: 0; width: min(92vw, 420px); max-height: min(90dvh, 620px); overflow: auto; box-shadow: var(--shadow);
+      transform-origin: center;
     }
+    dialog[open] { animation: dialog-in .18s cubic-bezier(.2,.8,.2,1) both; }
     dialog::backdrop { background: rgba(0,0,0,.65); backdrop-filter: blur(2px); }
+    dialog[open]::backdrop { animation: backdrop-in .18s ease-out both; }
+    @keyframes dialog-in {
+      from { opacity: 0; transform: translate(-50%, -46%) scale(.96); }
+      to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+    @keyframes backdrop-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
     .dialog-body { padding: 20px 18px 16px; }
     .dialog-body h3 {
       font-family: "Albireo", "Poppins", sans-serif;
@@ -250,9 +258,7 @@
       color: #fca5a5; border-radius: 12px; padding: 12px; font-size: 13.5px; line-height: 1.5;
     }
 
-    .loading { text-align: center; color: var(--dim); padding: 40px 0; font-size: 14px; }
     .empty { text-align: center; color: var(--dim); padding: 30px 0; font-size: 14.5px; line-height: 1.5; }
-    .footer { text-align: center; color: var(--dim); font-size: 11.5px; margin-top: 22px; }
 
     /* ---------- Board (grelha responsiva: telemóvel 1 coluna, PC 3 colunas) ---------- */
     .board { display: grid; gap: 14px; }
@@ -265,7 +271,7 @@
 
     @media (min-width: 1180px) {
       body { display: flex; justify-content: center; align-items: flex-start; }
-      #app { max-width: 1440px; margin: clamp(24px, 8vh, 96px) auto 0; padding: 24px 32px 48px; }
+      #app { max-width: 1440px; margin: clamp(18px, 5vh, 56px) auto 0; padding: 24px 32px 48px; }
       .board {
         grid-template-columns: minmax(250px, .9fr) minmax(520px, 1.5fr) minmax(290px, .9fr);
         gap: 20px;
@@ -288,7 +294,7 @@
       .board .teams-card,
       .board .score,
       .board .clock { align-self: stretch; }
-      .board .teams-card { display: flex; align-items: flex-start; }
+      .board .teams-card { display: flex; align-items: center; }
       .board .teams-card .teams { width: 100%; }
       .board .clock { display: flex; flex-direction: column; justify-content: center; }
       .periods-card .period-groups { grid-template-columns: 1fr 1fr; gap: 18px; }
@@ -351,7 +357,7 @@
     </form>
     <div class="dialog-actions">
       <button class="btn" id="clock-cancel" type="button">Cancelar</button>
-      <button class="btn btn--primary" value="ok" form="clock-form">Definir tempo</button>
+      <button class="btn btn--primary" id="clock-confirm" type="button">Definir tempo</button>
     </div>
   </dialog>
 
@@ -398,7 +404,6 @@
       notice: null,
       noticeTimer: null,
       connection: "connecting",
-      teleScore: null,
       obs: null,
       streamRefreshAt: 0,
       offlineTimer: null,
@@ -431,6 +436,11 @@
     };
     const REGULAR_PERIODS = ["FIRST_HALF", "HALF_TIME", "SECOND_HALF", "FULL_TIME"];
     const EXTRA_PERIODS = ["EXTRA_FIRST_HALF", "EXTRA_HALF_TIME", "EXTRA_SECOND_HALF", "EXTRA_FULL_TIME"];
+    const OBS_SCENES = [
+      { key: "matchscore", label: "MATCHSCORE" },
+      { key: "goal", label: "GOLO" },
+      { key: "sponsors", label: "SPONSORS" },
+    ];
 
     /* ---------- helpers ---------- */
     function esc(value) {
@@ -504,7 +514,7 @@
       const nextState = payload?.state ?? null;
       const currentVersion = ui.snapshot?.state?.version ?? 0;
       if (nextState && nextState.version < currentVersion) return false;
-      ui.snapshot = { state: nextState, undoAvailable: Boolean(payload?.undoAvailable) };
+      ui.snapshot = { state: nextState };
       if (!nextState) ui.teamDraft = null;
       return true;
     }
@@ -535,7 +545,7 @@
               setNotice("info", "O estado mudou noutro dispositivo; os comandos pendentes foram cancelados.");
               break;
             }
-            acceptSnapshot({ state: result.state, undoAvailable: result.undoAvailable });
+            acceptSnapshot({ state: result.state });
             if (action?.type === "SET_TEAMS") ui.teamDraft = null;
             if (action?.type === "RESET") ui.overtimeEnabled = false;
           } catch (error) {
@@ -650,15 +660,12 @@
           state.clockRunning,
           state.version,
         ],
-        ui.snapshot?.undoAvailable,
         ui.setupAllowed,
         ui.busy,
         ui.obsBusy,
         ui.overtimeEnabled,
         ui.pendingActions.length,
         ui.connection,
-        ui.filesOk,
-        ui.teleScore,
         ui.obs,
         ui.notice,
       ]);
@@ -701,8 +708,7 @@
             Ainda não há um controlo ativo.<br>
             No PC do estádio, abre <strong>http://localhost:${location.port || 8080}</strong> e configura as equipas.
           </div>
-          ${obsCardHtml()}
-          ${footerHtml()}`;
+          ${obsCardHtml()}`;
         bindObsControls();
         return;
       }
@@ -717,8 +723,7 @@
             <div class="field"><label for="setup-away">Equipa visitante</label><input id="setup-away" maxlength="48"></div>
             <button id="setup-start" class="btn btn--primary btn--block btn--lg">Começar controlo</button>
           </div>
-          ${obsCardHtml()}
-          ${footerHtml()}`;
+          ${obsCardHtml()}`;
         $("setup-start").addEventListener("click", startSetup);
         bindObsControls();
         return;
@@ -753,21 +758,9 @@
         </section>
 
           <section class="card score">
-            <div class="score__side">
-              <strong class="score__num">${state.homeScore}</strong>
-              <div class="score__controls">
-                <button id="home-minus" aria-label="Remover golo da casa" ${state.homeScore === 0 ? "disabled" : ""}>−</button>
-                <button id="home-plus" aria-label="Marcar golo da casa">+</button>
-              </div>
-            </div>
+            ${scoreSideHtml("home", state.homeScore)}
             <span class="score__sep">—</span>
-            <div class="score__side">
-              <strong class="score__num">${state.awayScore}</strong>
-              <div class="score__controls">
-                <button id="away-minus" aria-label="Remover golo visitante" ${state.awayScore === 0 ? "disabled" : ""}>−</button>
-                <button id="away-plus" aria-label="Marcar golo visitante">+</button>
-              </div>
-            </div>
+            ${scoreSideHtml("away", state.awayScore)}
           </section>
 
           <section class="card clock">
@@ -815,9 +808,7 @@
         </section>
 
         ${obsCardHtml()}
-        </div>
-
-        ${footerHtml()}`;
+        </div>`;
 
       $("team-home-input").addEventListener("input", (event) => {
         ui.teamDraft = { home: event.target.value, away: $("team-away-input").value };
@@ -829,10 +820,10 @@
         event.preventDefault();
         saveTeamsInline();
       });
-      $("home-plus").addEventListener("click", () => send({ type: "SCORE", side: "home", delta: 1 }));
-      $("home-minus").addEventListener("click", () => send({ type: "SCORE", side: "home", delta: -1 }));
-      $("away-plus").addEventListener("click", () => send({ type: "SCORE", side: "away", delta: 1 }));
-      $("away-minus").addEventListener("click", () => send({ type: "SCORE", side: "away", delta: -1 }));
+      for (const side of ["home", "away"]) {
+        $(`${side}-plus`).addEventListener("click", () => send({ type: "SCORE", side, delta: 1 }));
+        $(`${side}-minus`).addEventListener("click", () => send({ type: "SCORE", side, delta: -1 }));
+      }
       $("clock-toggle").addEventListener("click", () => send(running ? { type: "PAUSE_CLOCK" } : { type: "START_CLOCK" }));
       $("clock-set").addEventListener("click", openClock);
       $("clock-step").addEventListener("change", (event) => { ui.clockStep = Number(event.target.value) || 1; });
@@ -857,9 +848,6 @@
     function notificationHtml() {
       const messages = [];
       if (ui.notice) messages.push(ui.notice);
-      if (ui.teleScore?.clockConflict) {
-        messages.push({ tone: "info", text: "TeleScore está a correr o relógio — pára o relógio no TeleScore para evitar conflito." });
-      }
       if (ui.connection === "offline") {
         messages.push({ tone: "info", text: "Sem ligação ao servidor — a tentar religar…" });
       }
@@ -869,12 +857,19 @@
         .join("")}</div>`;
     }
 
-    function footerHtml() {
-      return "";
-    }
-
     function periodButtonHtml(period, state) {
       return `<button data-period="${period}" class="${state.period === period ? "is-active" : ""}">${PERIOD_LABELS[period]}</button>`;
+    }
+
+    function scoreSideHtml(side, score) {
+      const label = side === "home" ? "casa" : "visitante";
+      return `<div class="score__side">
+        <strong class="score__num">${score}</strong>
+        <div class="score__controls">
+          <button id="${side}-minus" aria-label="Remover golo ${label}" ${score === 0 ? "disabled" : ""}>−</button>
+          <button id="${side}-plus" aria-label="Marcar golo ${label}">+</button>
+        </div>
+      </div>`;
     }
 
     function obsStatusHtml() {
@@ -889,9 +884,7 @@
           <div class="section-label">Controlo OBS</div>
           ${obsStatusHtml()}
           <div class="obs-actions" role="group" aria-label="Cenas OBS">
-            ${obsButtonHtml("matchscore", "MATCHSCORE")}
-            ${obsButtonHtml("goal", "GOLO")}
-            ${obsButtonHtml("sponsors", "SPONSORS")}
+            ${OBS_SCENES.map(({ key, label }) => obsButtonHtml(key, label)).join("")}
           </div>
         </section>`;
     }
@@ -960,14 +953,24 @@
       $("dlg-clock").showModal();
     }
 
-    $("clock-form").addEventListener("submit", (event) => {
-      const form = event.target;
-      if (event.submitter?.value === "ok") {
-        const minutes = Number($("clock-min").value) || 0;
-        const seconds = Number($("clock-sec").value) || 0;
-        const periodMax = PERIOD_MAX[ui.snapshot.state.period] ?? 0;
-        void send({ type: "SET_CLOCK", seconds: Math.min(periodMax, Math.max(0, minutes * 60 + seconds)) });
+    function submitClock() {
+      const minutes = Number($("clock-min").value);
+      const seconds = Number($("clock-sec").value);
+      if (!Number.isInteger(minutes) || minutes < 0 || !Number.isInteger(seconds) || seconds < 0 || seconds > 59) {
+        setNotice("error", "Indica um tempo válido.");
+        render();
+        return;
       }
+      const periodMax = PERIOD_MAX[ui.snapshot.state.period] ?? 0;
+      const total = Math.min(periodMax, minutes * 60 + seconds);
+      $("dlg-clock").close();
+      send({ type: "SET_CLOCK", seconds: total });
+    }
+
+    $("clock-confirm").addEventListener("click", submitClock);
+    $("clock-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      submitClock();
     });
     $("clock-cancel").addEventListener("click", () => $("dlg-clock").close());
 
@@ -1026,7 +1029,7 @@
           method: "POST",
           body: JSON.stringify({ homeTeam: home, awayTeam: away }),
         });
-        ui.snapshot = { state: payload.state, undoAvailable: payload.undoAvailable };
+        ui.snapshot = { state: payload.state };
         setNotice("success", "Controlo iniciado.");
       } catch (error) {
         if (!error.message.startsWith("Sessão")) setNotice("error", error.message);
@@ -1049,8 +1052,6 @@
       try {
         const health = await api("/api/health");
         markServerOnline();
-        ui.filesOk = health.filesOk;
-        ui.teleScore = health.telescore ?? null;
         ui.obs = health.obs ?? ui.obs;
         render();
       } catch { /* health opcional */ }

@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readSync, renameSync, statSync, unlinkSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { isMatchdayState, type MatchdayState } from "./domain/matchday";
 
 export interface PersistedSession {
@@ -118,15 +118,25 @@ export class MatchdayStore {
 
   /** Snapshot VACUUM INTO (seguro com WAL) para o backup rotativo. */
   private rotateBackup(): void {
+    const temp = `${this.backupPaths[0]}.${process.pid}.tmp`;
     try {
       const [primary, secondary] = this.backupPaths;
-      const temp = `${primary}.tmp`;
+      try {
+        if (existsSync(temp)) unlinkSync(temp);
+      } catch {
+        // Um temporário antigo não deve impedir uma nova cópia de segurança.
+      }
       this.db.query(`VACUUM INTO '${temp.replaceAll("'", "''")}'`).run();
       if (existsSync(secondary)) unlinkSync(secondary);
       if (existsSync(primary)) renameSync(primary, secondary);
       renameSync(temp, primary);
     } catch {
       // Backup falhou: o estado principal já está persistido; não derruba o processo.
+      try {
+        if (existsSync(temp)) unlinkSync(temp);
+      } catch {
+        // Melhor esforço de limpeza.
+      }
     }
   }
 
@@ -169,10 +179,6 @@ function isDatabaseUsable(dbPath: string): boolean {
 
 function migrate(db: Database): void {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS meta (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
     CREATE TABLE IF NOT EXISTS state (
       id          INTEGER PRIMARY KEY CHECK (id = 1),
       state_json  TEXT NOT NULL,

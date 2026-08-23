@@ -1,15 +1,12 @@
 import type { Server } from "bun";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { normalizeTeamName } from "./domain/matchday";
-import type { MatchdayState } from "./domain/matchday";
+import { createInitialState, normalizeTeamName, type MatchdayState } from "./domain/matchday";
 import { applyCommand, isMatchdayCommandAction, type MatchdayCommandAction } from "./commands";
-import { createInitialState } from "./domain/matchday";
 import { verifyAccessPassword, verifyToken, signToken, type TokenVerification } from "./auth";
 import { MatchdayStore, ConflictError } from "./store";
 import { TxtWriter } from "./writer";
 import { DEFAULT_OBS_CONFIG, normalizeObsConfig, saveObsConfig, type AppConfig, type ObsConfig } from "./config";
-import type { TeleScoreStatus } from "./mirror";
 import { OBS_SCENE_KEYS, ObsWebSocketClient, type ObsSceneKey } from "./obs";
 import embeddedUi from "./ui/index.html";
 
@@ -41,7 +38,6 @@ export interface HealthReport {
   filesOk: boolean;
   lastError: string | null;
   lastWriteAt: string | null;
-  telescore: TeleScoreStatus;
   obs: ReturnType<ObsWebSocketClient["status"]>;
   version: string;
   port: number;
@@ -61,6 +57,7 @@ const SSE_HEARTBEAT_MS = 15_000;
 const MAX_AUTH_ATTEMPTS = 5;
 const AUTH_WINDOW_MS = 60_000;
 const AUTH_LOCK_MS = 60_000;
+const SSE_ENCODER = new TextEncoder();
 
 interface AuthAttempt {
   count: number;
@@ -74,7 +71,6 @@ export class MatchdayServer {
   private readonly config: AppConfig;
   private readonly obs: ObsWebSocketClient;
   private readonly localCheck: (request: Request, server: BunServer) => boolean;
-  private teleScoreStatus: () => TeleScoreStatus;
   private readonly subscribers = new Set<ReadableStreamDefaultController<Uint8Array>>();
   private readonly authAttempts = new Map<string, AuthAttempt>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -85,19 +81,12 @@ export class MatchdayServer {
     store: MatchdayStore;
     writer: TxtWriter;
     localCheck?: (request: Request, server: BunServer) => boolean;
-    teleScoreStatus?: () => TeleScoreStatus;
   }) {
     this.config = options.config;
     this.store = options.store;
     this.writer = options.writer;
     this.obs = new ObsWebSocketClient(options.config.obs);
     this.localCheck = options.localCheck ?? isLocalRequest;
-    this.teleScoreStatus = options.teleScoreStatus ?? (() => ({
-      enabled: options.config.teleScore.enabled,
-      online: false,
-      lastSeenAt: null,
-      clockConflict: false,
-    }));
   }
 
   start(portOverride?: number): BunServer {
@@ -143,8 +132,7 @@ export class MatchdayServer {
   }
 
   /**
-   * Aplica um comando internamente (sem autenticação/versão) — usado pelo
-   * espelho do TeleScore e por outros controladores internos.
+   * Aplica um comando internamente (sem autenticação/versão).
    */
   applyCommandAction(action: MatchdayCommandAction): MatchdaySnapshot {
     const session = this.store.load();
@@ -156,10 +144,6 @@ export class MatchdayServer {
     const snapshot = this.snapshot();
     this.broadcast(snapshot);
     return snapshot;
-  }
-
-  setTeleScoreStatus(provider: () => TeleScoreStatus): void {
-    this.teleScoreStatus = provider;
   }
 
   private obsConfig(): ObsConfig {
@@ -200,7 +184,7 @@ export class MatchdayServer {
       throw new HttpError(400, "As cenas OBS são inválidas.");
     }
     const scenes = { ...current.scenes, ...(scenePatch as Record<string, unknown> | undefined) };
-    for (const key of ["matchscore", "goal", "sponsors"] as const) {
+    for (const key of OBS_SCENE_KEYS) {
       if (typeof scenes[key] !== "string" || !scenes[key].trim()) {
         throw new HttpError(400, `O nome da cena ${key} é obrigatório.`);
       }
@@ -244,7 +228,7 @@ export class MatchdayServer {
       }
       if (path === "/api/obs/settings" && request.method === "PUT") {
         this.requireAuth(request, url);
-        return jsonResponse({ settings: this.updateObsSettings(await request.json()), obs: this.obs.status() });
+        return jsonResponse({ settings: this.updateObsSettings(await jsonObject(request)), obs: this.obs.status() });
       }
       if (path === "/api/obs/test" && request.method === "POST") {
         this.requireAuth(request, url);
@@ -258,12 +242,12 @@ export class MatchdayServer {
       }
       if (path === "/api/command" && request.method === "POST") {
         this.requireAuth(request, url);
-        const body = (await request.json()) as { baseVersion?: unknown; action?: unknown };
-        return await this.handleCommand(body, server);
+        const body = await jsonObject(request) as { baseVersion?: unknown; action?: unknown };
+        return await this.handleCommand(body);
       }
       if (path === "/api/obs/scene" && request.method === "POST") {
         this.requireAuth(request, url);
-        const body = (await request.json()) as { sceneKey?: unknown };
+        const body = await jsonObject(request) as { sceneKey?: unknown };
         if (typeof body.sceneKey !== "string" || !OBS_SCENE_KEYS.includes(body.sceneKey as ObsSceneKey)) {
           throw new HttpError(400, "Cena OBS inválida.");
         }
@@ -282,7 +266,7 @@ export class MatchdayServer {
         if (!this.localCheck(request, server)) {
           throw new HttpError(403, "O setup só pode ser feito a partir do PC do estádio (127.0.0.1).");
         }
-        const body = (await request.json()) as { homeTeam?: unknown; awayTeam?: unknown };
+        const body = await jsonObject(request) as { homeTeam?: unknown; awayTeam?: unknown };
         return jsonResponse(this.handleSetup(body));
       }
       if (path === "/api/health" && request.method === "GET") {
@@ -309,7 +293,6 @@ export class MatchdayServer {
 
   private async handleCommand(
     body: { baseVersion?: unknown; action?: unknown },
-    _server: BunServer,
   ): Promise<Response> {
     const baseVersion = Number(body.baseVersion);
     const action = body.action as MatchdayCommandAction | undefined;
@@ -374,7 +357,6 @@ export class MatchdayServer {
       filesOk,
       lastError,
       lastWriteAt: this.writer.lastWriteAt ? new Date(this.writer.lastWriteAt).toISOString() : null,
-      telescore: this.teleScoreStatus(),
       obs: this.obs.status(),
       version: APP_VERSION,
       port: this.port,
@@ -397,7 +379,11 @@ export class MatchdayServer {
   private async auth(request: Request, server: BunServer): Promise<Response> {
     const key = requestKey(request, server);
     const now = Date.now();
-    const attempt = this.authAttempts.get(key);
+    for (const [attemptKey, attempt] of this.authAttempts) {
+      if (attempt.resetAt <= now && attempt.lockedUntil <= now) this.authAttempts.delete(attemptKey);
+    }
+    const stored = this.authAttempts.get(key);
+    const attempt = stored && stored.resetAt > now ? stored : undefined;
     if (attempt && attempt.lockedUntil > now) {
       const seconds = Math.ceil((attempt.lockedUntil - now) / 1000);
       return jsonResponse({ error: `Demasiadas tentativas. Tenta de novo em ${seconds}s.` }, 429);
@@ -410,7 +396,7 @@ export class MatchdayServer {
       return jsonResponse({ error: "Corpo JSON inválido." }, 400);
     }
     if (typeof pin !== "string" || !verifyAccessPassword(pin)) {
-      const current = this.authAttempts.get(key) ?? { count: 0, resetAt: now + AUTH_WINDOW_MS, lockedUntil: 0 };
+      const current = attempt ?? { count: 0, resetAt: now + AUTH_WINDOW_MS, lockedUntil: 0 };
       current.count += 1;
       if (current.count >= MAX_AUTH_ATTEMPTS) {
         current.lockedUntil = now + AUTH_LOCK_MS;
@@ -425,17 +411,19 @@ export class MatchdayServer {
   }
 
   private streamResponse(): Response {
-    const encoder = new TextEncoder();
+    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
     return new Response(
       new ReadableStream<Uint8Array>({
         start: (controller) => {
+          streamController = controller;
           this.subscribers.add(controller);
           controller.enqueue(
-            encoder.encode(`event: state\ndata: ${JSON.stringify(this.snapshot())}\n\n`),
+            SSE_ENCODER.encode(`event: state\ndata: ${JSON.stringify(this.snapshot())}\n\n`),
           );
         },
-        cancel: (controller) => {
-          this.subscribers.delete(controller as ReadableStreamDefaultController<Uint8Array>);
+        cancel: () => {
+          if (streamController) this.subscribers.delete(streamController);
+          streamController = null;
         },
       }),
       {
@@ -450,8 +438,11 @@ export class MatchdayServer {
   }
 
   private broadcast(snapshot: MatchdaySnapshot): void {
-    const encoder = new TextEncoder();
-    const payload = encoder.encode(`event: state\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    const payload = SSE_ENCODER.encode(`event: state\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    this.sendToSubscribers(payload);
+  }
+
+  private sendToSubscribers(payload: Uint8Array): void {
     for (const controller of [...this.subscribers]) {
       try {
         controller.enqueue(payload);
@@ -462,15 +453,7 @@ export class MatchdayServer {
   }
 
   private sendHeartbeat(): void {
-    const encoder = new TextEncoder();
-    const payload = encoder.encode(`: ping\n\n`);
-    for (const controller of [...this.subscribers]) {
-      try {
-        controller.enqueue(payload);
-      } catch {
-        this.subscribers.delete(controller);
-      }
-    }
+    this.sendToSubscribers(SSE_ENCODER.encode(": ping\n\n"));
   }
 
 }
@@ -501,6 +484,14 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" },
   });
+}
+
+async function jsonObject(request: Request): Promise<Record<string, unknown>> {
+  const body: unknown = await request.json();
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new HttpError(400, "O corpo JSON deve ser um objeto.");
+  }
+  return body as Record<string, unknown>;
 }
 
 function htmlResponse(body: string): Response {

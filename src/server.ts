@@ -1,11 +1,10 @@
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { loadConfig } from "./config";
 import { MatchdayStore } from "./store";
 import { TxtWriter } from "./writer";
 import { MatchdayServer, APP_VERSION } from "./api";
-import { TeleScoreMirror } from "./mirror";
 import { FIXED_ACCESS_PASSWORD } from "./auth";
 
 const WATCHDOG_INTERVAL_MS = 5_000;
@@ -40,7 +39,7 @@ function processAlive(pid: number): boolean {
       stdout: "pipe",
       stderr: "pipe",
     });
-    return result.stdout.toString().includes(String(pid));
+    return new RegExp(`\\b${pid}\\b`).test(result.stdout.toString());
   } catch {
     // À cautela: se não conseguirmos verificar, assume-se vivo (não duplica).
     return true;
@@ -48,23 +47,40 @@ function processAlive(pid: number): boolean {
 }
 
 function acquireLock(lockPath: string): boolean {
-  if (existsSync(lockPath)) {
-    try {
-      const pid = Number(readFileSync(lockPath, "utf8"));
-      if (Number.isInteger(pid) && pid > 0 && processAlive(pid)) {
-        return false;
-      }
-    } catch {
-      // ficheiro ilegível: considera-se obsoleto e reescreve-se abaixo
-    }
+  try {
+    writeFileSync(lockPath, String(process.pid), { encoding: "utf8", flag: "wx" });
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") return false;
   }
-  writeFileSync(lockPath, String(process.pid), { encoding: "utf8" });
-  return true;
+
+  let staleContent: string;
+  try {
+    staleContent = readFileSync(lockPath, "utf8");
+    const pid = Number(staleContent.trim());
+    if (Number.isInteger(pid) && pid > 0 && processAlive(pid)) return false;
+  } catch {
+    staleContent = "";
+  }
+
+  try {
+    if (readFileSync(lockPath, "utf8") !== staleContent) return false;
+    unlinkSync(lockPath);
+  } catch {
+    return false;
+  }
+
+  try {
+    writeFileSync(lockPath, String(process.pid), { encoding: "utf8", flag: "wx" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function releaseLock(lockPath: string): void {
   try {
-    unlinkSync(lockPath);
+    if (readFileSync(lockPath, "utf8").trim() === String(process.pid)) unlinkSync(lockPath);
   } catch {
     // já removido
   }
@@ -109,14 +125,15 @@ function main(): void {
 
   const setPin = argValue("--set-pin");
   const config = loadConfig({ configPath: argValue("--config"), setPin: setPin ?? null });
+  const dataDir = dirname(config.configPath);
 
-  const lockPath = join(config.exeDir, "matchday.lock");
+  const lockPath = join(dataDir, "matchday.lock");
   if (!acquireLock(lockPath)) {
     console.error("[server] Outra instância do Matchday Control já está a correr.");
     process.exit(1);
   }
 
-  const storeResult = MatchdayStore.open(join(config.exeDir, "matchday.db"));
+  const storeResult = MatchdayStore.open(join(dataDir, "matchday.db"));
   const store = storeResult.store;
 
   const writer = new TxtWriter(config.outputDir, config.files);
@@ -132,52 +149,17 @@ function main(): void {
 
   const app = new MatchdayServer({ config, store, writer });
 
-  // Espelho do TeleScore: coexiste na mesma pasta e adota alterações externas.
-  let mirror: TeleScoreMirror | null = null;
-  if (config.teleScore.enabled) {
-    writer.seedFromDisk();
-    mirror = new TeleScoreMirror({
-      watchDir: config.teleScore.watchDir ?? config.outputDir,
-      files: config.files,
-      pollMs: config.teleScore.pollMs,
-      adoptTeams: config.teleScore.adoptTeams,
-      adoptScores: config.teleScore.adoptScores,
-      adoptClock: config.teleScore.adoptClock,
-      processName: config.teleScore.processName,
-      getState: () => store.load().state,
-      ownValue: (key) => writer.lastValue(key),
-      invalidateFile: (key) => writer.invalidate(key),
-      applyActions: (actions) => {
-        for (const action of actions) app.applyCommandAction(action);
-      },
-    });
-    app.setTeleScoreStatus(() => mirror!.getStatus());
-  }
-
   const session = store.load();
   if (session.state) {
-    if (mirror) {
-      // Reconciliar primeiro (adotar ficheiros externos mais recentes) e só
-      // depois escrever as diferenças — nunca reescrever valores iguais.
-      mirror.reconcileOnce();
-      writer.seedFromDisk();
-      const reconciled = store.load().state ?? session.state;
-      writer.writeState(reconciled, Date.now(), false);
-      console.log(
-        `[server] Estado restaurado · v${reconciled.version} · ${reconciled.homeTeam} ${reconciled.homeScore}-${reconciled.awayScore} ${reconciled.awayTeam}`,
-      );
-    } else {
-      writer.writeState(session.state, Date.now(), true);
-      console.log(
-        `[server] Estado restaurado · v${session.state.version} · ${session.state.homeTeam} ${session.state.homeScore}-${session.state.awayScore} ${session.state.awayTeam}`,
-      );
-    }
+    writer.writeState(session.state, Date.now(), true);
+    console.log(
+      `[server] Estado restaurado · v${session.state.version} · ${session.state.homeTeam} ${session.state.homeScore}-${session.state.awayScore} ${session.state.awayTeam}`,
+    );
   } else {
     console.log("[server] Sem controlo ativo. Abra http://localhost:8080 no PC e configure as equipas.");
   }
 
   const server = app.start();
-  mirror?.start();
 
   if (storeResult.restoredFromBackup) {
     console.warn(`[server] Estado restaurado a partir de backup. ${storeResult.startupError ?? ""}`);
@@ -219,10 +201,9 @@ function main(): void {
       // sem escritas pendentes: o estado já está persistido a cada mutação
     }
     void app.stop().finally(() => {
-      mirror?.stop();
       store.close();
       releaseLock(lockPath);
-      console.log("[server] Matchday Control parado. Pode voltar a abrir o TeleScore.");
+      console.log("[server] Matchday Control parado.");
       process.exit(code);
     });
   }

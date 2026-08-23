@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { DEFAULT_TXT_FILES, type TxtFileNames } from "./writer";
 import { FIXED_ACCESS_PASSWORD, randomTokenSecret } from "./auth";
@@ -8,7 +8,6 @@ export interface AppConfig {
   exeDir: string;
   outputDir: string;
   files: TxtFileNames;
-  teleScore: TeleScoreConfig;
   openBrowserOnStart: boolean;
   port: number;
   bind: string;
@@ -60,33 +59,20 @@ export function normalizeObsConfig(raw: unknown, fallback: ObsConfig = DEFAULT_O
   };
 }
 
-export interface TeleScoreConfig {
-  enabled: boolean;
-  /** null = mesma pasta de saída (outputDir). */
-  watchDir: string | null;
-  pollMs: number;
-  adoptTeams: boolean;
-  adoptScores: boolean;
-  adoptClock: boolean;
-  /** Reservado: os ficheiros Period.txt/Period Text.txt não são escritos (OBS não os lê). */
-  writePeriodFiles: boolean;
-  processName: string | null;
-}
-
 export interface LoadConfigOptions {
   configPath?: string;
   setPin?: string | null;
-  printPin?: boolean;
 }
 
 const DEFAULT_PORT = 8080;
 const DEFAULT_BIND = "0.0.0.0";
 const DEFAULT_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 /**
- * Pasta de saída por omissão, relativa ao executável: os 5 ficheiros `.txt`
- * são escritos em `scoreboard` junto do exe (em dev/build: dist/scoreboard).
+ * Pasta de saída por omissão. No pacote, o config vive em `data/` e aponta
+ * para `../scoreboard`, mantendo os 5 ficheiros `.txt` fora dos dados internos.
  */
 const DEFAULT_OUTPUT_DIR = "scoreboard";
+const PACKAGED_OUTPUT_DIR = "../scoreboard";
 
 function appBaseDir(): string {
   const exe = process.execPath;
@@ -95,19 +81,15 @@ function appBaseDir(): string {
 }
 
 function defaultConfigPath(): string {
-  return join(appBaseDir(), "config.json");
+  return join(appBaseDir(), "data", "config.json");
 }
 
 function normalize(raw: unknown, configPath: string): AppConfig {
   const base = dirname(resolve(configPath));
   const r = (raw ?? {}) as Record<string, unknown>;
   const files = (r.files ?? {}) as Record<string, unknown>;
-  const teleScore = (r.telescore ?? {}) as Record<string, unknown>;
   const outputDir = String(r.outputDir ?? DEFAULT_OUTPUT_DIR);
   const port = Number(r.port ?? DEFAULT_PORT);
-  const pollMs = Number(teleScore.pollMs ?? 500);
-  const rawWatchDir =
-    typeof teleScore.watchDir === "string" && teleScore.watchDir.trim() ? String(teleScore.watchDir) : null;
   return {
     configPath,
     exeDir: base,
@@ -119,17 +101,6 @@ function normalize(raw: unknown, configPath: string): AppConfig {
       awayScore: String(files.awayScore ?? DEFAULT_TXT_FILES.awayScore),
       clock: String(files.clock ?? DEFAULT_TXT_FILES.clock),
     },
-    teleScore: {
-      enabled: teleScore.enabled !== false,
-      watchDir: rawWatchDir ? (isAbsolute(rawWatchDir) ? rawWatchDir : resolve(base, rawWatchDir)) : null,
-      pollMs: Number.isFinite(pollMs) ? Math.min(5000, Math.max(100, Math.floor(pollMs))) : 500,
-      adoptTeams: teleScore.adoptTeams !== false,
-      adoptScores: teleScore.adoptScores !== false,
-      adoptClock: teleScore.adoptClock !== false,
-      writePeriodFiles: teleScore.writePeriodFiles === true,
-      processName:
-        typeof teleScore.processName === "string" && teleScore.processName.trim() ? teleScore.processName.trim() : null,
-    },
     openBrowserOnStart: r.openBrowserOnStart !== false,
     port: Number.isInteger(port) && port > 0 && port < 65536 ? port : DEFAULT_PORT,
     bind: String(r.bind ?? DEFAULT_BIND),
@@ -140,20 +111,10 @@ function normalize(raw: unknown, configPath: string): AppConfig {
   };
 }
 
-function defaultPayload(): Record<string, unknown> {
+function defaultPayload(outputDir = DEFAULT_OUTPUT_DIR): Record<string, unknown> {
   return {
-    outputDir: DEFAULT_OUTPUT_DIR,
+    outputDir,
     files: DEFAULT_TXT_FILES,
-    telescore: {
-      enabled: true,
-      watchDir: null,
-      pollMs: 500,
-      adoptTeams: true,
-      adoptScores: true,
-      adoptClock: true,
-      writePeriodFiles: false,
-      processName: "TeleScore.exe",
-    },
     openBrowserOnStart: true,
     port: DEFAULT_PORT,
     bind: DEFAULT_BIND,
@@ -164,7 +125,31 @@ function defaultPayload(): Record<string, unknown> {
 }
 
 function writeConfigFile(configPath: string, payload: Record<string, unknown>): void {
-  writeFileSync(configPath, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8" });
+  mkdirSync(dirname(configPath), { recursive: true });
+  const tempPath = `${configPath}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tempPath, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8" });
+    renameSync(tempPath, configPath);
+  } catch (error) {
+    try {
+      if (existsSync(tempPath)) unlinkSync(tempPath);
+    } catch {
+      // Melhor esforço de limpeza.
+    }
+    throw error;
+  }
+}
+
+function configPayload(config: AppConfig): Record<string, unknown> {
+  return {
+    outputDir: config.outputDir,
+    files: config.files,
+    openBrowserOnStart: config.openBrowserOnStart,
+    port: config.port,
+    bind: config.bind,
+    tokenSecret: config.tokenSecret,
+    tokenTtlMs: config.tokenTtlMs,
+  };
 }
 
 export function saveObsConfig(config: AppConfig, obs: ObsConfig): void {
@@ -172,17 +157,9 @@ export function saveObsConfig(config: AppConfig, obs: ObsConfig): void {
   if (existsSync(config.configPath)) {
     payload = JSON.parse(readFileSync(config.configPath, "utf8").replace(/^\uFEFF/, "")) as Record<string, unknown>;
   } else {
-    payload = {
-      outputDir: config.outputDir,
-      files: config.files,
-      telescore: config.teleScore,
-      openBrowserOnStart: config.openBrowserOnStart,
-      port: config.port,
-      bind: config.bind,
-      tokenSecret: config.tokenSecret,
-      tokenTtlMs: config.tokenTtlMs,
-    };
+    payload = configPayload(config);
   }
+  delete payload.telescore;
   payload.obs = obs;
   writeConfigFile(config.configPath, payload);
 }
@@ -207,15 +184,30 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     } catch (error) {
       throw new Error(`Configuração inválida em ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const config = normalize(raw, configPath);
-    if (!config.tokenSecret || config.tokenSecret.length < 32) {
-      throw new Error(`Falta um tokenSecret válido (32+ caracteres hex) em ${configPath}.`);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new Error(`Configuração inválida em ${configPath}: esperado um objeto JSON.`);
+    }
+    const source = { ...(raw as Record<string, unknown>) };
+    let changed = false;
+    if ("telescore" in source) {
+      delete source.telescore;
+      changed = true;
+    }
+    if (source.tokenSecret === undefined || source.tokenSecret === null || source.tokenSecret === "") {
+      source.tokenSecret = randomTokenSecret();
+      changed = true;
+    }
+    if (changed) writeConfigFile(configPath, source);
+    const config = normalize(source, configPath);
+    if (!/^[0-9a-f]{32,}$/i.test(config.tokenSecret)) {
+      throw new Error(`O tokenSecret em ${configPath} deve ter pelo menos 32 caracteres hexadecimais.`);
     }
     return config;
   }
 
-  // Primeiro arranque: cria config.json com segredo e configuração OBS desativada.
-  const payload = defaultPayload();
+  // Primeiro arranque: guarda os dados em data/ e deixa scoreboard separado.
+  const usesPackagedDefaults = !options.configPath && !process.env.MATCHDAY_CONTROL_CONFIG?.trim();
+  const payload = defaultPayload(usesPackagedDefaults ? PACKAGED_OUTPUT_DIR : DEFAULT_OUTPUT_DIR);
   writeConfigFile(configPath, payload);
   return normalize(payload, configPath);
 }

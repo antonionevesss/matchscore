@@ -19,13 +19,14 @@ export const DEFAULT_TXT_FILES: TxtFileNames = {
 };
 
 /**
- * Grava os 5 ficheiros `.txt` com o mesmo contrato do TeleScore/Torre Bridge:
+ * Grava os 5 ficheiros `.txt` do marcador:
  * UTF-8, escrita atómica (temp + rename), só escreve quando o valor muda.
  */
 export class TxtWriter {
   readonly outputDir: string;
   readonly files: TxtFileNames;
   private readonly last = new Map<string, string>();
+  private readonly failed = new Set<keyof TxtFileNames>();
   private lastErrorValue: string | null = null;
   private lastWriteAtValue: number | null = null;
 
@@ -66,7 +67,7 @@ export class TxtWriter {
 
   /**
    * Inicializa o cache com o conteúdo atual dos ficheiros no disco, para
-   * nunca reescrever valores idênticos (coexistência com o TeleScore).
+   * nunca reescrever valores idênticos.
    */
   seedFromDisk(): void {
     for (const key of Object.keys(this.files) as Array<keyof TxtFileNames>) {
@@ -90,9 +91,16 @@ export class TxtWriter {
     };
     let ok = true;
     for (const key of Object.keys(values) as Array<keyof TxtFileNames>) {
-      if (!force && this.last.get(key) === values[key]) continue;
-      if (!this.write(key, values[key])) ok = false;
+      if (!force && !this.failed.has(key) && this.last.get(key) === values[key]) continue;
+      if (!this.write(key, values[key])) {
+        this.failed.add(key);
+        ok = false;
+      } else {
+        this.failed.delete(key);
+      }
     }
+    if (this.failed.size > 0) ok = false;
+    if (ok) this.lastErrorValue = null;
     return ok;
   }
 
@@ -111,7 +119,6 @@ export class TxtWriter {
       }
     }
     this.last.set(key, value);
-    this.lastErrorValue = null;
     this.lastWriteAtValue = Date.now();
     return true;
   }

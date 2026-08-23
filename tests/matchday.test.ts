@@ -45,7 +45,7 @@ test("o resultado nunca fica negativo e golo soma", () => {
   assert.equal(state.awayScore, 1);
 });
 
-test("SET_SCORE define o resultado diretamente (usado pelo espelho do TeleScore)", () => {
+test("SET_SCORE define o resultado diretamente", () => {
   let state = createInitialState("A", "B");
   state = applyMatchdayAction(state, { type: "SET_SCORE", side: "home", score: 3 });
   assert.equal(state.homeScore, 3);

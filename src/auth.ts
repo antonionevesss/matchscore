@@ -1,6 +1,4 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-
-const SCRYPT_KEYLEN = 64;
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 /** Palavra-passe operacional fixa do Matchday Control. */
 export const FIXED_ACCESS_PASSWORD = "1887";
@@ -9,22 +7,6 @@ export function verifyAccessPassword(value: string): boolean {
   const candidate = Buffer.from(String(value ?? ""), "utf8");
   const expected = Buffer.from(FIXED_ACCESS_PASSWORD, "utf8");
   return candidate.length === expected.length && timingSafeEqual(candidate, expected);
-}
-
-export function hashPin(pin: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const hash = scryptSync(pin, salt, SCRYPT_KEYLEN).toString("hex");
-  return `scrypt$${salt}$${hash}`;
-}
-
-export function verifyPin(pin: string, stored: string | null | undefined): boolean {
-  if (!stored || !pin) return false;
-  const parts = stored.split("$");
-  if (parts.length !== 3 || parts[0] !== "scrypt") return false;
-  const [, salt, expectedHex] = parts;
-  const expected = Buffer.from(expectedHex, "hex");
-  const candidate = scryptSync(pin, salt, SCRYPT_KEYLEN);
-  return expected.length === candidate.length && timingSafeEqual(expected, candidate);
 }
 
 export function randomTokenSecret(): string {

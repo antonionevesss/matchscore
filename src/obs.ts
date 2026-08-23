@@ -251,10 +251,16 @@ export class ObsWebSocketClient {
         reject(new Error("Tempo esgotado ao comunicar com o OBS."));
       }, REQUEST_TIMEOUT_MS);
       this.pending.set(requestId, { resolve, reject, timer });
-      socket.send(JSON.stringify({
-        op: 6,
-        d: { requestType, requestId, requestData },
-      }));
+      try {
+        socket.send(JSON.stringify({
+          op: 6,
+          d: { requestType, requestId, requestData },
+        }));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(requestId);
+        reject(error);
+      }
     });
   }
 

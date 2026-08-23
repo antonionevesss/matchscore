@@ -25,32 +25,53 @@ export function isPlayingPeriod(period: MatchdayPeriod): boolean {
   return MATCHDAY_PLAYING_PERIODS.includes(period);
 }
 
+const FIRST_HALF_SECONDS = 45 * 60;
+const REGULAR_MATCH_SECONDS = 90 * 60;
+const EXTRA_FIRST_HALF_SECONDS = 105 * 60;
+const EXTRA_MATCH_SECONDS = 120 * 60;
+
 /**
  * Limite absoluto de cada período — o relógio nunca passa daqui
  * (proibido pela liga).
  */
 export const MATCHDAY_PERIOD_MAX_SECONDS: Record<MatchdayPeriod, number> = {
   PRE_MATCH: 0,
-  FIRST_HALF: 45 * 60,
-  HALF_TIME: 45 * 60,
-  SECOND_HALF: 90 * 60,
-  EXTRA_FIRST_HALF: 105 * 60,
-  EXTRA_HALF_TIME: 105 * 60,
-  EXTRA_SECOND_HALF: 120 * 60,
-  FULL_TIME: 90 * 60,
-  EXTRA_FULL_TIME: 120 * 60,
+  FIRST_HALF: FIRST_HALF_SECONDS,
+  HALF_TIME: FIRST_HALF_SECONDS,
+  SECOND_HALF: REGULAR_MATCH_SECONDS,
+  EXTRA_FIRST_HALF: EXTRA_FIRST_HALF_SECONDS,
+  EXTRA_HALF_TIME: EXTRA_FIRST_HALF_SECONDS,
+  EXTRA_SECOND_HALF: EXTRA_MATCH_SECONDS,
+  FULL_TIME: REGULAR_MATCH_SECONDS,
+  EXTRA_FULL_TIME: EXTRA_MATCH_SECONDS,
+};
+
+interface PeriodTransition {
+  baseSeconds: number;
+  running: boolean;
+  repeatBaseSeconds?: number;
+}
+
+const PERIOD_TRANSITIONS: Record<MatchdayPeriod, PeriodTransition> = {
+  PRE_MATCH: { baseSeconds: 0, running: false },
+  FIRST_HALF: { baseSeconds: 0, running: false },
+  HALF_TIME: { baseSeconds: FIRST_HALF_SECONDS, running: false, repeatBaseSeconds: FIRST_HALF_SECONDS },
+  SECOND_HALF: { baseSeconds: FIRST_HALF_SECONDS, running: true, repeatBaseSeconds: FIRST_HALF_SECONDS },
+  EXTRA_FIRST_HALF: { baseSeconds: REGULAR_MATCH_SECONDS, running: true, repeatBaseSeconds: REGULAR_MATCH_SECONDS },
+  EXTRA_HALF_TIME: { baseSeconds: EXTRA_FIRST_HALF_SECONDS, running: false, repeatBaseSeconds: EXTRA_FIRST_HALF_SECONDS },
+  EXTRA_SECOND_HALF: { baseSeconds: EXTRA_FIRST_HALF_SECONDS, running: true, repeatBaseSeconds: EXTRA_FIRST_HALF_SECONDS },
+  FULL_TIME: { baseSeconds: REGULAR_MATCH_SECONDS, running: false, repeatBaseSeconds: REGULAR_MATCH_SECONDS },
+  EXTRA_FULL_TIME: { baseSeconds: EXTRA_MATCH_SECONDS, running: false, repeatBaseSeconds: EXTRA_MATCH_SECONDS },
 };
 
 /** Valores absolutos usados pelos estados de intervalo/fim. */
-export const MATCHDAY_PERIOD_FIXED_SECONDS: Partial<Record<MatchdayPeriod, number>> = {
-  HALF_TIME: 45 * 60,
-  SECOND_HALF: 45 * 60,
-  FULL_TIME: 90 * 60,
-  EXTRA_FIRST_HALF: 90 * 60,
-  EXTRA_HALF_TIME: 105 * 60,
-  EXTRA_SECOND_HALF: 105 * 60,
-  EXTRA_FULL_TIME: 120 * 60,
-};
+export const MATCHDAY_PERIOD_FIXED_SECONDS: Partial<Record<MatchdayPeriod, number>> = Object.fromEntries(
+  Object.entries(PERIOD_TRANSITIONS)
+    .filter((entry): entry is [MatchdayPeriod, PeriodTransition & { repeatBaseSeconds: number }] =>
+      entry[1].repeatBaseSeconds !== undefined,
+    )
+    .map(([period, transition]) => [period, transition.repeatBaseSeconds]),
+) as Partial<Record<MatchdayPeriod, number>>;
 
 export const MATCHDAY_HISTORY_LIMIT = 30;
 
@@ -127,10 +148,6 @@ export function currentClockSeconds(state: MatchdayState, nowMs = Date.now()): n
   return Math.min(max, state.clockBaseSeconds + elapsed);
 }
 
-export function foldClockSeconds(state: MatchdayState, nowMs = Date.now()): number {
-  return currentClockSeconds(state, nowMs);
-}
-
 export function formatMatchdayClock(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
   const minutes = Math.floor(safe / 60);
@@ -159,7 +176,7 @@ export function applyMatchdayAction(
       if (!state.clockRunning) return state;
       return {
         ...state,
-        clockBaseSeconds: foldClockSeconds(state, nowMs),
+        clockBaseSeconds: currentClockSeconds(state, nowMs),
         clockRunning: false,
         clockStartedAt: null,
         updatedAt: nowIso,
@@ -208,7 +225,7 @@ export function applyMatchdayAction(
     }
     case "SET_PERIOD": {
       if (action.period === state.period) {
-        const fixedSeconds = MATCHDAY_PERIOD_FIXED_SECONDS[action.period];
+        const fixedSeconds = PERIOD_TRANSITIONS[action.period].repeatBaseSeconds;
         if (
           fixedSeconds === undefined ||
           state.clockBaseSeconds === fixedSeconds &&
@@ -225,81 +242,15 @@ export function applyMatchdayAction(
           updatedAt: nowIso,
         };
       }
-      switch (action.period) {
-        case "PRE_MATCH":
-        case "FIRST_HALF":
-          return {
-            ...state,
-            period: action.period,
-            clockBaseSeconds: 0,
-            clockRunning: false,
-            clockStartedAt: null,
-            updatedAt: nowIso,
-          };
-        case "HALF_TIME":
-          return {
-            ...state,
-            period: action.period,
-            clockBaseSeconds: 45 * 60,
-            clockRunning: false,
-            clockStartedAt: null,
-            updatedAt: nowIso,
-          };
-        case "FULL_TIME":
-          return {
-            ...state,
-            period: action.period,
-            clockBaseSeconds: 90 * 60,
-            clockRunning: false,
-            clockStartedAt: null,
-            updatedAt: nowIso,
-          };
-        case "SECOND_HALF":
-          return {
-            ...state,
-            period: "SECOND_HALF",
-            clockBaseSeconds: 45 * 60,
-            clockRunning: true,
-            clockStartedAt: nowIso,
-            updatedAt: nowIso,
-          };
-        case "EXTRA_FIRST_HALF":
-          return {
-            ...state,
-            period: "EXTRA_FIRST_HALF",
-            clockBaseSeconds: 90 * 60,
-            clockRunning: true,
-            clockStartedAt: nowIso,
-            updatedAt: nowIso,
-          };
-        case "EXTRA_HALF_TIME":
-          return {
-            ...state,
-            period: action.period,
-            clockBaseSeconds: 105 * 60,
-            clockRunning: false,
-            clockStartedAt: null,
-            updatedAt: nowIso,
-          };
-        case "EXTRA_SECOND_HALF":
-          return {
-            ...state,
-            period: "EXTRA_SECOND_HALF",
-            clockBaseSeconds: 105 * 60,
-            clockRunning: true,
-            clockStartedAt: nowIso,
-            updatedAt: nowIso,
-          };
-        case "EXTRA_FULL_TIME":
-          return {
-            ...state,
-            period: action.period,
-            clockBaseSeconds: 120 * 60,
-            clockRunning: false,
-            clockStartedAt: null,
-            updatedAt: nowIso,
-          };
-      }
+      const transition = PERIOD_TRANSITIONS[action.period];
+      return {
+        ...state,
+        period: action.period,
+        clockBaseSeconds: transition.baseSeconds,
+        clockRunning: transition.running,
+        clockStartedAt: transition.running ? nowIso : null,
+        updatedAt: nowIso,
+      };
     }
     case "SET_TEAMS": {
       const homeTeam = normalizeTeamName(action.homeTeam);

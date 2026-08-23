@@ -34,6 +34,24 @@ test("commit + load fazem roundtrip com histórico", () => {
   }
 });
 
+test("remove temporário de backup antigo antes de criar a cópia", () => {
+  const dir = tempDir();
+  try {
+    const dbPath = join(dir, "matchday.db");
+    const { store } = MatchdayStore.open(dbPath);
+    const first = createInitialState("A", "B");
+    store.commit(first, []);
+    const staleTemp = `${dbPath}.bak.${process.pid}.tmp`;
+    writeFileSync(staleTemp, "temporário antigo", "utf8");
+    store.commit({ ...first, homeScore: 1, version: 2 }, [first]);
+    assert.equal(existsSync(staleTemp), false);
+    assert.equal(existsSync(`${dbPath}.bak`), true);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("commit com versão desatualizada lança ConflictError", () => {
   const dir = tempDir();
   try {

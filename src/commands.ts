@@ -38,7 +38,12 @@ export function isMatchdayCommandAction(value: unknown): value is MatchdayComman
     case "SET_PERIOD":
       return MATCHDAY_PERIODS.includes(action.period as (typeof MATCHDAY_PERIODS)[number]);
     case "SET_TEAMS":
-      return typeof action.homeTeam === "string" && typeof action.awayTeam === "string";
+      return (
+        typeof action.homeTeam === "string" &&
+        typeof action.awayTeam === "string" &&
+        action.homeTeam.trim().length > 0 &&
+        action.awayTeam.trim().length > 0
+      );
     default:
       return false;
   }

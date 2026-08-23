@@ -72,6 +72,8 @@ test("validador de ações rejeita formas inválidas", () => {
   assert.equal(isMatchdayCommandAction({ type: "SET_SCORE", side: "away", score: 2 }), true);
   assert.equal(isMatchdayCommandAction({ type: "SET_SCORE", side: "away", score: Number.NaN }), false);
   assert.equal(isMatchdayCommandAction({ type: "SET_PERIOD", period: "OVERTIME" }), false);
+  assert.equal(isMatchdayCommandAction({ type: "SET_TEAMS", homeTeam: " ", awayTeam: "B" }), false);
+  assert.equal(isMatchdayCommandAction({ type: "SET_TEAMS", homeTeam: "A", awayTeam: "B" }), true);
   assert.equal(isMatchdayCommandAction({ type: "SET_CLOCK", seconds: "12" }), false);
   assert.equal(isMatchdayCommandAction({ type: "ADJUST_CLOCK", deltaSeconds: 5 }), true);
   assert.equal(isMatchdayCommandAction({ type: "ADJUST_CLOCK", deltaSeconds: 1.5 }), false);

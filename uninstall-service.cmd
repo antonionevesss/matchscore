@@ -22,5 +22,5 @@ if errorlevel 1 (
   exit /b 1
 )
 echo [ok] Servico "MatchdayControl" removido.
-echo O executavel, config.json e os dados continuam intactos - podes voltar a abrir o TeleScore.
+echo O executavel, config.json e os dados continuam intactos.
 endlocal

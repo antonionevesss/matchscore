@@ -4,7 +4,7 @@ import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { hashPin, randomTokenSecret } from "../src/auth";
+import { randomTokenSecret } from "../src/auth";
 
 const ROOT = join(import.meta.dir, "..");
 const EXE = join(ROOT, "dist", "MatchdayControl.exe");
@@ -71,7 +71,7 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
       },
       port,
       bind: "127.0.0.1",
-      pinHash: hashPin(pin),
+      pinHash: "legacy-pin-hash-ignored",
       tokenSecret: secret,
       openBrowserOnStart: false,
       tokenTtlMs: 60_000,
@@ -90,8 +90,11 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
     assert.match(uiHtml, /id="login-pin"/);
     assert.match(uiHtml, /api\/stream/);
     assert.match(uiHtml, /id="dlg-period"/);
+    assert.match(uiHtml, /id="clock-confirm"/);
+    assert.match(uiHtml, /@keyframes dialog-in/);
     assert.match(uiHtml, /id="toggle-overtime"/);
     assert.doesNotMatch(uiHtml, /id="undo"/);
+    assert.doesNotMatch(uiHtml, /footerHtml|class="footer"/);
 
     const token = await login(baseUrl, pin);
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };

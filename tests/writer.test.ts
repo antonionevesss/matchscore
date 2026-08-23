@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,7 +10,7 @@ function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "mc-writer-"));
 }
 
-test("escreve os 5 ficheiros com o contrato TeleScore", () => {
+test("escreve os 5 ficheiros do marcador", () => {
   const dir = tempDir();
   try {
     const writer = new TxtWriter(dir);
@@ -85,6 +85,31 @@ test("falha de escrita não lança; expõe lastError", () => {
     const ok = writer.writeState(state, Date.now(), true);
     assert.equal(ok, false);
     assert.ok(writer.lastError);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("uma falha parcial permanece visível até a escrita falhada ser recuperada", () => {
+  const dir = tempDir();
+  try {
+    const blocked = join(dir, "blocked");
+    writeFileSync(blocked, "x");
+    const writer = new TxtWriter(dir, {
+      homeName: "Home Name.txt",
+      homeScore: "blocked\\Home Score.txt",
+      awayName: "Away Name.txt",
+      awayScore: "Away Score.txt",
+      clock: "Clock.txt",
+    });
+    const state = createInitialState("A", "B");
+    assert.equal(writer.writeState(state, Date.now(), true), false);
+    assert.ok(writer.lastError);
+
+    rmSync(blocked, { force: true });
+    mkdirSync(blocked);
+    assert.equal(writer.writeState(state, Date.now(), false), true);
+    assert.equal(writer.lastError, null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

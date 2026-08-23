@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { MatchdayServer } from "../src/api";
-import { hashPin, randomTokenSecret } from "../src/auth";
+import { randomTokenSecret } from "../src/auth";
 import { MatchdayStore } from "../src/store";
 import { TxtWriter } from "../src/writer";
-import { TeleScoreMirror } from "../src/mirror";
 
 const SECRET = randomTokenSecret();
 const PIN = "1887";
@@ -24,17 +23,6 @@ interface TestHarness {
   stop: () => Promise<void>;
 }
 
-const TELESCORE_OFF = {
-  enabled: false,
-  watchDir: null,
-  pollMs: 500,
-  adoptTeams: true,
-  adoptScores: true,
-  adoptClock: true,
-  writePeriodFiles: false,
-  processName: null,
-} as const;
-
 async function startApp(options: { local?: boolean } = {}): Promise<TestHarness> {
   const dir = mkdtempSync(join(tmpdir(), "mc-api-"));
   const dbPath = join(dir, "matchday.db");
@@ -50,11 +38,10 @@ async function startApp(options: { local?: boolean } = {}): Promise<TestHarness>
       awayScore: "Away Score.txt",
       clock: "Clock.txt",
     },
-    teleScore: TELESCORE_OFF,
     openBrowserOnStart: false,
     port: 0,
     bind: "127.0.0.1",
-    pinHash: hashPin(PIN),
+    pinHash: "legacy-pin-hash-ignored",
     tokenSecret: SECRET,
     tokenTtlMs: 60_000,
   } as const;
@@ -201,6 +188,39 @@ test("auth: PIN errado 401, correto dá token; rotas privadas exigem token", asy
   }
 });
 
+test("rate limit reinicia depois da janela de tentativas", async () => {
+  const harness = await startApp();
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  try {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await fetch(`${harness.baseUrl}/api/auth`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: "errada" }),
+      });
+      assert.equal(response.status, 401);
+    }
+    const locked = await fetch(`${harness.baseUrl}/api/auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: "errada" }),
+    });
+    assert.equal(locked.status, 429);
+
+    now += 60_001;
+    assert.equal(await (await fetch(`${harness.baseUrl}/api/auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: PIN }),
+    })).status, 200);
+  } finally {
+    Date.now = originalNow;
+    await harness.stop();
+  }
+});
+
 test("setup é bloqueado fora do PC local e funciona localmente", async () => {
   const remote = await startApp({ local: false });
   try {
@@ -299,11 +319,10 @@ test("relógio em contagem sobrevive a reinício (derivado de timestamps)", asyn
         awayScore: "Away Score.txt",
         clock: "Clock.txt",
       },
-      teleScore: TELESCORE_OFF,
       openBrowserOnStart: false,
       port: 0,
       bind: "127.0.0.1",
-      pinHash: hashPin(PIN),
+      pinHash: "legacy-pin-hash-ignored",
       tokenSecret: SECRET,
       tokenTtlMs: 60_000,
     } as const;
@@ -365,90 +384,18 @@ test("SSE emite evento de estado no arranque da stream", async () => {
   }
 });
 
-test("coexistência com TeleScore: adoção externa, autoridade do relógio e convergência", async () => {
+test("SSE remove o subscriber quando o cliente cancela a stream", async () => {
   const harness = await startApp({ local: true });
   try {
     const token = await login(harness.baseUrl);
-    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-    const setup = await fetch(`${harness.baseUrl}/api/setup`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ homeTeam: "ACADÉMICA", awayTeam: "CD FEIRENSE" }),
-    });
-    assert.equal(setup.status, 200);
-
-    const mirror = new TeleScoreMirror({
-      watchDir: harness.outputDir,
-      files: {
-        homeName: "Home Name.txt",
-        homeScore: "Home Score.txt",
-        awayName: "Away Name.txt",
-        awayScore: "Away Score.txt",
-        clock: "Clock.txt",
-      },
-      pollMs: 500,
-      adoptTeams: true,
-      adoptScores: true,
-      adoptClock: true,
-    processName: null,
-      getState: () => harness.store.load().state,
-      ownValue: (key) => harness.writer.lastValue(key),
-      invalidateFile: (key) => harness.writer.invalidate(key),
-      applyActions: (actions) => {
-        for (const action of actions) harness.app.applyCommandAction(action);
-      },
-    });
-    harness.app.setTeleScoreStatus(() => mirror.getStatus());
-
-    const getState = async () => {
-      const response = await fetch(`${harness.baseUrl}/api/state`, { headers });
-      const body = (await response.json()) as { state: { version: number; homeScore: number; awayTeam: string; clockBaseSeconds: number; clockRunning: boolean } };
-      return body.state;
-    };
-
-    // "TeleScore" (escritor não atómico) muda o resultado → o app adota.
-    writeFileSync(join(harness.outputDir, "Home Score.txt"), "3", "utf8");
-    mirror.reconcileOnce();
-    assert.equal((await getState()).homeScore, 3);
-    assert.equal(readFileSync(join(harness.outputDir, "Home Score.txt"), "utf8"), "3");
-
-    // Muda a equipa visitante → adotada e normalizada.
-    writeFileSync(join(harness.outputDir, "Away Name.txt"), "cd mafra", "utf8");
-    mirror.reconcileOnce();
-    assert.equal((await getState()).awayTeam, "CD MAFRA");
-
-    // Relógio do app a correr: Clock.txt externo é ignorado e há conflito.
-    const beforeClock = await getState();
-    await fetch(`${harness.baseUrl}/api/command`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ baseVersion: beforeClock.version, action: { type: "SET_PERIOD", period: "FIRST_HALF" } }),
-    });
-    const running = await getState();
-    await fetch(`${harness.baseUrl}/api/command`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ baseVersion: running.version, action: { type: "START_CLOCK" } }),
-    });
-    writeFileSync(join(harness.outputDir, "Clock.txt"), "99:00", "utf8");
-    mirror.reconcileOnce();
-    assert.equal(mirror.getStatus().clockConflict, true);
-    const afterExternal = await getState();
-    assert.notEqual(afterExternal.clockBaseSeconds, 99 * 60);
-    // Push-back: a nossa escrita repõe o nosso relógio no ficheiro.
-    harness.writer.writeState(harness.store.load().state!, Date.now(), false);
-    assert.notEqual(readFileSync(join(harness.outputDir, "Clock.txt"), "utf8"), "99:00");
-
-    // Relógio do app parado: Clock.txt externo é adotado e limitado ao período.
-    const paused = await getState();
-    await fetch(`${harness.baseUrl}/api/command`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ baseVersion: paused.version, action: { type: "PAUSE_CLOCK" } }),
-    });
-    writeFileSync(join(harness.outputDir, "Clock.txt"), "46:00", "utf8");
-    mirror.reconcileOnce();
-    assert.equal((await getState()).clockBaseSeconds, 45 * 60);
+    const response = await fetch(`${harness.baseUrl}/api/stream?token=${encodeURIComponent(token)}`);
+    const reader = response.body!.getReader();
+    await reader.read();
+    const internals = harness.app as unknown as { subscribers: Set<unknown> };
+    assert.equal(internals.subscribers.size, 1);
+    await reader.cancel();
+    await Bun.sleep(0);
+    assert.equal(internals.subscribers.size, 0);
   } finally {
     await harness.stop();
   }
