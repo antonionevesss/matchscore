@@ -6,6 +6,7 @@ import { MatchdayStore } from "./store";
 import { TxtWriter } from "./writer";
 import { MatchdayServer, APP_VERSION } from "./api";
 import { FIXED_ACCESS_PASSWORD } from "./auth";
+import { keepSystemAwake } from "./power";
 
 const WATCHDOG_INTERVAL_MS = 5_000;
 const WATCHDOG_MAX_LAG_MS = 10_000;
@@ -160,6 +161,8 @@ function main(): void {
   }
 
   const server = app.start();
+  const powerRequest = keepSystemAwake();
+  console.log("[power] Suspensão e hibernação automáticas desativadas enquanto a app estiver ligada.");
 
   if (storeResult.restoredFromBackup) {
     console.warn(`[server] Estado restaurado a partir de backup. ${storeResult.startupError ?? ""}`);
@@ -201,6 +204,7 @@ function main(): void {
       // sem escritas pendentes: o estado já está persistido a cada mutação
     }
     void app.stop().finally(() => {
+      powerRequest.release();
       store.close();
       releaseLock(lockPath);
       console.log("[server] Matchday Control parado.");

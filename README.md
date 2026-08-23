@@ -110,6 +110,9 @@ O relógio é **contínuo** e **nunca passa do limite** de cada período:
   código 1 se o event loop ficar preso >10 s; `uncaughtException` /
   `unhandledRejection` fazem flush e saída limpa; lock de instância única
   impede processos duplicados.
+- **Energia**: enquanto o executável está ligado, pede ao Windows para não
+  suspender nem hibernar automaticamente. O ecrã pode continuar a desligar-se
+  segundo o plano de energia; o pedido é libertado quando a app termina.
 - **Falha de escrita nunca derruba** o processo: aparece em `GET /api/health`
   e na UI; o último valor válido mantém-se.
 

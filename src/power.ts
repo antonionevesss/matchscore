@@ -1,0 +1,50 @@
+import { dlopen, FFIType } from "bun:ffi";
+
+// SetThreadExecutionState flags from Win32.
+const ES_CONTINUOUS = 0x80000000;
+const ES_SYSTEM_REQUIRED = 0x00000001;
+const KEEP_SYSTEM_AWAKE = ES_CONTINUOUS + ES_SYSTEM_REQUIRED;
+
+export interface PowerRequest {
+  release(): void;
+}
+
+const NOOP_REQUEST: PowerRequest = { release() {} };
+
+/**
+ * Impede suspensão/hibernação automática enquanto o processo está ativo.
+ * O ecrã pode continuar a desligar-se segundo o plano de energia do Windows.
+ * Ao terminar o processo, o Windows também elimina automaticamente o pedido.
+ */
+export function keepSystemAwake(): PowerRequest {
+  if (process.platform !== "win32") return NOOP_REQUEST;
+
+  try {
+    const kernel32 = dlopen("kernel32.dll", {
+      SetThreadExecutionState: {
+        args: [FFIType.u32],
+        returns: FFIType.u32,
+      },
+    });
+
+    const previousState = kernel32.symbols.SetThreadExecutionState(KEEP_SYSTEM_AWAKE);
+    if (previousState === 0) {
+      console.warn("[power] Não foi possível impedir a suspensão automática do Windows.");
+      return NOOP_REQUEST;
+    }
+
+    let active = true;
+    return {
+      release(): void {
+        if (!active) return;
+        active = false;
+        kernel32.symbols.SetThreadExecutionState(ES_CONTINUOUS);
+      },
+    };
+  } catch (error) {
+    console.warn(
+      `[power] Controlo de energia indisponível: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return NOOP_REQUEST;
+  }
+}
