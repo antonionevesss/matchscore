@@ -4,7 +4,7 @@ import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { randomTokenSecret } from "../src/auth";
+import { hashAccessPassword, randomTokenSecret } from "../src/auth";
 
 const ROOT = join(import.meta.dir, "..");
 const EXE = join(ROOT, "dist", "MatchdayControl.exe");
@@ -55,7 +55,7 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
   const configPath = join(dir, "config.json");
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const pin = "1887";
+  const pin = "246810";
   const secret = randomTokenSecret();
 
   writeFileSync(
@@ -71,7 +71,7 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
       },
       port,
       bind: "127.0.0.1",
-      pinHash: "legacy-pin-hash-ignored",
+      accessPinHash: hashAccessPassword(pin),
       tokenSecret: secret,
       openBrowserOnStart: false,
       tokenTtlMs: 60_000,
@@ -102,7 +102,7 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
     const setup = await fetch(`${baseUrl}/api/setup`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ homeTeam: "ACADÉMICA", awayTeam: "CD FEIRENSE" }),
+      body: JSON.stringify({ homeTeam: "HOME TEAM", awayTeam: "AWAY TEAM" }),
     });
     assert.equal(setup.status, 200);
 
@@ -131,7 +131,7 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
     const running = (await runClock.json()) as { state: { clockRunning: boolean } };
     assert.equal(running.state.clockRunning, true);
 
-    assert.equal(readFileSync(join(outputDir, "Home Name.txt"), "utf8"), "ACADÉMICA");
+    assert.equal(readFileSync(join(outputDir, "Home Name.txt"), "utf8"), "HOME TEAM");
     assert.equal(readFileSync(join(outputDir, "Home Score.txt"), "utf8"), "1");
     await Bun.sleep(2_500);
     const clockBefore = readFileSync(join(outputDir, "Clock.txt"), "utf8").trim();
@@ -168,17 +168,17 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
     }
     await process.exited.catch(() => {});
 
-    // A palavra-passe é fixa: valores alternativos são rejeitados.
-    const setPin = Bun.spawn([EXE, "--config", configPath, "--set-pin", "987654"], {
+    // O PIN pode ser alterado e tem de respeitar o formato de 6 algarismos.
+    const setPin = Bun.spawn([EXE, "--config", configPath, "--set-pin", "98765"], {
       stdout: "ignore",
       stderr: "ignore",
     });
-    assert.notEqual(await setPin.exited, 0, "--set-pin deve rejeitar valores alternativos");
-    const fixedPin = Bun.spawn([EXE, "--config", configPath, "--set-pin", "1887"], {
+    assert.notEqual(await setPin.exited, 0, "--set-pin deve rejeitar PINs inválidos");
+    const updatedPin = Bun.spawn([EXE, "--config", configPath, "--set-pin", "135790"], {
       stdout: "ignore",
       stderr: "ignore",
     });
-    assert.equal(await fixedPin.exited, 0, "--set-pin 1887 deve ser aceite");
+    assert.equal(await updatedPin.exited, 0, "--set-pin deve aceitar PINs válidos");
 
     rmSync(dir, { recursive: true, force: true });
   }

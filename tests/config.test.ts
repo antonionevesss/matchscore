@@ -18,7 +18,7 @@ test("primeiro arranque grava outputDir relativo 'scoreboard' e resolve junto do
     assert.equal(config.outputDir, join(dir, "scoreboard"));
     const stored = JSON.parse(readFileSync(configPath, "utf8")) as {
       outputDir: string;
-      pinHash?: string;
+      accessPinHash: string;
       tokenSecret: string;
       openBrowserOnStart: boolean;
       obs: { enabled: boolean; host: string; port: number; scenes: { matchscore: string } };
@@ -26,12 +26,12 @@ test("primeiro arranque grava outputDir relativo 'scoreboard' e resolve junto do
     assert.equal(stored.outputDir, "scoreboard");
     assert.equal("telescore" in stored, false);
     assert.equal(stored.openBrowserOnStart, true);
-    assert.equal(stored.pinHash, undefined);
+    assert.match(stored.accessPinHash, /^scrypt\$/);
     assert.equal(existsSync(join(dir, "pin.txt")), false);
     assert.equal(stored.obs.enabled, false);
     assert.equal(stored.obs.host, "127.0.0.1");
     assert.equal(stored.obs.port, 4455);
-    assert.equal(stored.obs.scenes.matchscore, "Cena 1 - Matchscore");
+    assert.equal(stored.obs.scenes.matchscore, "Marcador");
     assert.ok(stored.tokenSecret.length >= 32);
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -64,21 +64,21 @@ test("cliente OBS autentica, liga e troca a cena", async () => {
       port: 4455,
       password: "obs-secret",
       scenes: {
-        matchscore: "Cena 1 - Matchscore",
-        goal: "Cena 2 - Golo",
-        sponsors: "Cena 3 - Sponsors",
+        matchscore: "Marcador",
+        goal: "Alerta de golo",
+        sponsors: "Patrocinadores",
       },
     });
     client.start();
     const result = await client.setScene("goal");
-    assert.deepEqual(result, { sceneKey: "goal", sceneName: "Cena 2 - Golo" });
+  assert.deepEqual(result, { sceneKey: "goal", sceneName: "Alerta de golo" });
     assert.equal(client.status().connected, true);
     const socket = FakeWebSocket.instances.at(-1)!;
     assert.equal(socket.url, "ws://127.0.0.1:4455");
     assert.equal(socket.sent.some((message) => message.op === 1), true);
     const sceneRequest = socket.sent.find((message) => message.op === 6);
     assert.equal(sceneRequest?.d.requestType, "SetCurrentProgramScene");
-    assert.deepEqual(sceneRequest?.d.requestData, { sceneName: "Cena 2 - Golo" });
+  assert.deepEqual(sceneRequest?.d.requestData, { sceneName: "Alerta de golo" });
     client.stop();
   } finally {
     Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: original });

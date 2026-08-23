@@ -16,11 +16,12 @@
     "port": 4455,
     "password": "",
     "scenes": {
-      "matchscore": "Cena 1 - Matchscore",
-      "goal": "Cena 2 - Golo",
-      "sponsors": "Cena 3 - Sponsors"
+      "matchscore": "Marcador",
+      "goal": "Alerta de golo",
+      "sponsors": "Patrocinadores"
     }
   },
+  "accessPinHash": "",
   "tokenSecret": "",
   "tokenTtlMs": 43200000
 }

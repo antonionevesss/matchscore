@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FIXED_ACCESS_PASSWORD, randomTokenSecret, signToken, verifyAccessPassword, verifyToken } from "../src/auth";
+import { hashAccessPassword, randomTokenSecret, signToken, verifyAccessPassword, verifyToken } from "../src/auth";
 
-test("palavra-passe operacional fixa", () => {
-  assert.equal(FIXED_ACCESS_PASSWORD, "1887");
-  assert.equal(verifyAccessPassword("1887"), true);
-  assert.equal(verifyAccessPassword("123456"), false);
-  assert.equal(verifyAccessPassword("1887 "), false);
+test("PIN operacional é validado contra um hash", () => {
+  const hash = hashAccessPassword("246810");
+  assert.equal(verifyAccessPassword("246810", hash), true);
+  assert.equal(verifyAccessPassword("123456", hash), false);
+  assert.equal(verifyAccessPassword("246810 ", hash), false);
+  assert.equal(verifyAccessPassword("246810", "hash inválido"), false);
 });
 
 test("tokens assinados verificam e expiram", () => {

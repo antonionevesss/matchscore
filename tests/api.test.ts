@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { MatchdayServer } from "../src/api";
-import { randomTokenSecret } from "../src/auth";
+import { hashAccessPassword, randomTokenSecret } from "../src/auth";
 import { MatchdayStore } from "../src/store";
 import { TxtWriter } from "../src/writer";
 
 const SECRET = randomTokenSecret();
-const PIN = "1887";
+const PIN = "246810";
+const ACCESS_PIN_HASH = hashAccessPassword(PIN);
 
 interface TestHarness {
   dir: string;
@@ -41,7 +42,7 @@ async function startApp(options: { local?: boolean } = {}): Promise<TestHarness>
     openBrowserOnStart: false,
     port: 0,
     bind: "127.0.0.1",
-    pinHash: "legacy-pin-hash-ignored",
+    accessPinHash: ACCESS_PIN_HASH,
     tokenSecret: SECRET,
     tokenTtlMs: 60_000,
   } as const;
@@ -228,7 +229,7 @@ test("setup é bloqueado fora do PC local e funciona localmente", async () => {
     const blocked = await fetch(`${remote.baseUrl}/api/setup`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ homeTeam: "ACADÉMICA", awayTeam: "CD FEIRENSE" }),
+      body: JSON.stringify({ homeTeam: "HOME TEAM", awayTeam: "AWAY TEAM" }),
     });
     assert.equal(blocked.status, 403);
   } finally {
@@ -241,16 +242,16 @@ test("setup é bloqueado fora do PC local e funciona localmente", async () => {
     const response = await fetch(`${local.baseUrl}/api/setup`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ homeTeam: "  Académica ", awayTeam: "cd feirense" }),
+      body: JSON.stringify({ homeTeam: "  Home Team ", awayTeam: "away team" }),
     });
     assert.equal(response.status, 200);
     const snapshot = (await response.json()) as { state: { homeTeam: string; awayTeam: string; version: number } };
-    assert.equal(snapshot.state.homeTeam, "ACADÉMICA");
-    assert.equal(snapshot.state.awayTeam, "CD FEIRENSE");
+    assert.equal(snapshot.state.homeTeam, "HOME TEAM");
+    assert.equal(snapshot.state.awayTeam, "AWAY TEAM");
     assert.equal(snapshot.state.version, 1);
 
-    assert.equal(readFileSync(join(local.outputDir, "Home Name.txt"), "utf8"), "ACADÉMICA");
-    assert.equal(readFileSync(join(local.outputDir, "Away Name.txt"), "utf8"), "CD FEIRENSE");
+    assert.equal(readFileSync(join(local.outputDir, "Home Name.txt"), "utf8"), "HOME TEAM");
+    assert.equal(readFileSync(join(local.outputDir, "Away Name.txt"), "utf8"), "AWAY TEAM");
     assert.equal(readFileSync(join(local.outputDir, "Home Score.txt"), "utf8"), "0");
   } finally {
     await local.stop();
@@ -322,7 +323,7 @@ test("relógio em contagem sobrevive a reinício (derivado de timestamps)", asyn
       openBrowserOnStart: false,
       port: 0,
       bind: "127.0.0.1",
-      pinHash: "legacy-pin-hash-ignored",
+      accessPinHash: ACCESS_PIN_HASH,
       tokenSecret: SECRET,
       tokenTtlMs: 60_000,
     } as const;

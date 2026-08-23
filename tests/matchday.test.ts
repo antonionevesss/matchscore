@@ -11,9 +11,9 @@ import {
 } from "../src/domain/matchday";
 
 test("estado inicial usa nomes normalizados e versão 1", () => {
-  const state = createInitialState("  Académica ", "cd feirense");
-  assert.equal(state.homeTeam, "ACADÉMICA");
-  assert.equal(state.awayTeam, "CD FEIRENSE");
+  const state = createInitialState("  Home Team ", "away team");
+  assert.equal(state.homeTeam, "HOME TEAM");
+  assert.equal(state.awayTeam, "AWAY TEAM");
   assert.equal(state.homeScore, 0);
   assert.equal(state.period, "PRE_MATCH");
   assert.equal(state.clockRunning, false);
@@ -203,12 +203,12 @@ test("o relógio pode avançar ou recuar segundos sem ultrapassar o período", (
 
 test("trocar lados e renomear equipas normalizam para o marcador", () => {
   let state = createInitialState("A", "B");
-  state = applyMatchdayAction(state, { type: "SET_TEAMS", homeTeam: "  Académica ", awayTeam: "cd feirense" });
-  assert.equal(state.homeTeam, "ACADÉMICA");
-  assert.equal(state.awayTeam, "CD FEIRENSE");
+  state = applyMatchdayAction(state, { type: "SET_TEAMS", homeTeam: "  Home Team ", awayTeam: "away team" });
+  assert.equal(state.homeTeam, "HOME TEAM");
+  assert.equal(state.awayTeam, "AWAY TEAM");
   state = applyMatchdayAction(state, { type: "SWITCH_SIDES" });
-  assert.equal(state.homeTeam, "CD FEIRENSE");
-  assert.equal(state.awayTeam, "ACADÉMICA");
+  assert.equal(state.homeTeam, "AWAY TEAM");
+  assert.equal(state.awayTeam, "HOME TEAM");
 });
 
 test("reset repõe o marcador mantendo as equipas", () => {

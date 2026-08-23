@@ -1,6 +1,9 @@
 dist/
 node_modules/
+data/
+scoreboard/
 *.log
 .DS_Store
 matchday.db*
+initial-pin.txt
 pin.txt

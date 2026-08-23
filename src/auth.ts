@@ -1,12 +1,34 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
-/** Palavra-passe operacional fixa do Matchday Control. */
-export const FIXED_ACCESS_PASSWORD = "1887";
+const ACCESS_PIN_PREFIX = "scrypt";
 
-export function verifyAccessPassword(value: string): boolean {
-  const candidate = Buffer.from(String(value ?? ""), "utf8");
-  const expected = Buffer.from(FIXED_ACCESS_PASSWORD, "utf8");
-  return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+/** Gera um PIN numérico para a primeira instalação. */
+export function randomAccessPin(): string {
+  const value = randomBytes(4).readUInt32BE(0) % 900_000;
+  return String(value + 100_000);
+}
+
+/** Guarda o PIN sem o expor no ficheiro de configuração. */
+export function hashAccessPassword(value: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const digest = scryptSync(String(value), salt, 32).toString("hex");
+  return `${ACCESS_PIN_PREFIX}$${salt}$${digest}`;
+}
+
+export function isValidAccessPin(value: string): boolean {
+  return /^\d{6}$/.test(value);
+}
+
+export function verifyAccessPassword(value: string, storedHash: string): boolean {
+  try {
+    const [prefix, salt, digest] = String(storedHash).split("$");
+    if (prefix !== ACCESS_PIN_PREFIX || !salt || !digest || !/^[0-9a-f]{64}$/i.test(digest)) return false;
+    const expected = Buffer.from(digest, "hex");
+    const candidate = scryptSync(String(value ?? ""), salt, expected.length);
+    return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+  } catch {
+    return false;
+  }
 }
 
 export function randomTokenSecret(): string {

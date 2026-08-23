@@ -14,11 +14,11 @@ test("escreve os 5 ficheiros do marcador", () => {
   const dir = tempDir();
   try {
     const writer = new TxtWriter(dir);
-    const state = createInitialState("ACADÉMICA", "CD FEIRENSE");
+    const state = createInitialState("HOME TEAM", "AWAY TEAM");
     writer.writeState({ ...state, homeScore: 2, awayScore: 1 }, Date.now(), true);
-    assert.equal(readFileSync(join(dir, "Home Name.txt"), "utf8"), "ACADÉMICA");
+    assert.equal(readFileSync(join(dir, "Home Name.txt"), "utf8"), "HOME TEAM");
     assert.equal(readFileSync(join(dir, "Home Score.txt"), "utf8"), "2");
-    assert.equal(readFileSync(join(dir, "Away Name.txt"), "utf8"), "CD FEIRENSE");
+    assert.equal(readFileSync(join(dir, "Away Name.txt"), "utf8"), "AWAY TEAM");
     assert.equal(readFileSync(join(dir, "Away Score.txt"), "utf8"), "1");
     assert.equal(readFileSync(join(dir, "Clock.txt"), "utf8"), "00:00");
   } finally {

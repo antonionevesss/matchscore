@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { DEFAULT_TXT_FILES, type TxtFileNames } from "./writer";
-import { FIXED_ACCESS_PASSWORD, randomTokenSecret } from "./auth";
+import { hashAccessPassword, isValidAccessPin, randomAccessPin, randomTokenSecret } from "./auth";
 
 export interface AppConfig {
   configPath: string;
@@ -12,8 +12,8 @@ export interface AppConfig {
   port: number;
   bind: string;
   obs?: ObsConfig;
-  /** Campo legado: é lido para compatibilidade, mas nunca é usado. */
-  pinHash: string;
+  /** Hash scrypt do PIN operacional. */
+  accessPinHash: string;
   tokenSecret: string;
   tokenTtlMs: number;
 }
@@ -36,9 +36,9 @@ export const DEFAULT_OBS_CONFIG: ObsConfig = {
   port: 4455,
   password: "",
   scenes: {
-    matchscore: "Cena 1 - Matchscore",
-    goal: "Cena 2 - Golo",
-    sponsors: "Cena 3 - Sponsors",
+    matchscore: "Marcador",
+    goal: "Alerta de golo",
+    sponsors: "Patrocinadores",
   },
 };
 
@@ -105,13 +105,16 @@ function normalize(raw: unknown, configPath: string): AppConfig {
     port: Number.isInteger(port) && port > 0 && port < 65536 ? port : DEFAULT_PORT,
     bind: String(r.bind ?? DEFAULT_BIND),
     obs: normalizeObsConfig(r.obs),
-    pinHash: String(r.pinHash ?? ""),
+    accessPinHash: String(r.accessPinHash ?? ""),
     tokenSecret: String(r.tokenSecret ?? ""),
     tokenTtlMs: Number(r.tokenTtlMs ?? DEFAULT_TOKEN_TTL_MS),
   };
 }
 
-function defaultPayload(outputDir = DEFAULT_OUTPUT_DIR): Record<string, unknown> {
+function defaultPayload(
+  outputDir = DEFAULT_OUTPUT_DIR,
+  accessPinHash = hashAccessPassword(randomAccessPin()),
+): Record<string, unknown> {
   return {
     outputDir,
     files: DEFAULT_TXT_FILES,
@@ -119,6 +122,7 @@ function defaultPayload(outputDir = DEFAULT_OUTPUT_DIR): Record<string, unknown>
     port: DEFAULT_PORT,
     bind: DEFAULT_BIND,
     obs: DEFAULT_OBS_CONFIG,
+    accessPinHash,
     tokenSecret: randomTokenSecret(),
     tokenTtlMs: DEFAULT_TOKEN_TTL_MS,
   };
@@ -147,6 +151,7 @@ function configPayload(config: AppConfig): Record<string, unknown> {
     openBrowserOnStart: config.openBrowserOnStart,
     port: config.port,
     bind: config.bind,
+    accessPinHash: config.accessPinHash,
     tokenSecret: config.tokenSecret,
     tokenTtlMs: config.tokenTtlMs,
   };
@@ -170,10 +175,18 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     : process.env.MATCHDAY_CONTROL_CONFIG?.trim() || defaultConfigPath();
 
   if (options.setPin != null) {
-    if (options.setPin.trim() !== FIXED_ACCESS_PASSWORD) {
-      throw new Error(`A palavra-passe é fixa e só pode ser ${FIXED_ACCESS_PASSWORD}.`);
+    const pin = options.setPin.trim();
+    if (!isValidAccessPin(pin)) throw new Error("O PIN deve ter exatamente 6 algarismos.");
+    const config = loadConfig({ configPath });
+    const payload = JSON.parse(readFileSync(config.configPath, "utf8").replace(/^\uFEFF/, "")) as Record<string, unknown>;
+    payload.accessPinHash = hashAccessPassword(pin);
+    writeConfigFile(config.configPath, payload);
+    try {
+      unlinkSync(join(dirname(config.configPath), "initial-pin.txt"));
+    } catch {
+      // O PIN inicial pode já ter sido removido.
     }
-    console.log(`[config] A palavra-passe fixa é ${FIXED_ACCESS_PASSWORD}; não existe configuração variável.`);
+    console.log("[config] PIN atualizado.");
     process.exit(0);
   }
 
@@ -193,6 +206,16 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       delete source.telescore;
       changed = true;
     }
+    if ("pinHash" in source) {
+      delete source.pinHash;
+      changed = true;
+    }
+    if (source.accessPinHash === undefined || source.accessPinHash === null || source.accessPinHash === "") {
+      const initialPin = randomAccessPin();
+      source.accessPinHash = hashAccessPassword(initialPin);
+      writeFileSync(join(dirname(configPath), "initial-pin.txt"), `${initialPin}\n`, "utf8");
+      changed = true;
+    }
     if (source.tokenSecret === undefined || source.tokenSecret === null || source.tokenSecret === "") {
       source.tokenSecret = randomTokenSecret();
       changed = true;
@@ -202,12 +225,25 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     if (!/^[0-9a-f]{32,}$/i.test(config.tokenSecret)) {
       throw new Error(`O tokenSecret em ${configPath} deve ter pelo menos 32 caracteres hexadecimais.`);
     }
+    if (!verifyPinHashShape(config.accessPinHash)) {
+      throw new Error(`O accessPinHash em ${configPath} não é válido.`);
+    }
     return config;
   }
 
   // Primeiro arranque: guarda os dados em data/ e deixa scoreboard separado.
   const usesPackagedDefaults = !options.configPath && !process.env.MATCHDAY_CONTROL_CONFIG?.trim();
-  const payload = defaultPayload(usesPackagedDefaults ? PACKAGED_OUTPUT_DIR : DEFAULT_OUTPUT_DIR);
+  const initialPin = randomAccessPin();
+  const payload = defaultPayload(
+    usesPackagedDefaults ? PACKAGED_OUTPUT_DIR : DEFAULT_OUTPUT_DIR,
+    hashAccessPassword(initialPin),
+  );
   writeConfigFile(configPath, payload);
+  writeFileSync(join(dirname(configPath), "initial-pin.txt"), `${initialPin}\n`, "utf8");
   return normalize(payload, configPath);
+}
+
+function verifyPinHashShape(value: string): boolean {
+  const [prefix, salt, digest] = value.split("$");
+  return prefix === "scrypt" && Boolean(salt && digest && /^[0-9a-f]{64}$/i.test(digest));
 }

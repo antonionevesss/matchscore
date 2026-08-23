@@ -1,11 +1,10 @@
-import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { dirname, join } from "node:path";
 import { loadConfig } from "./config";
 import { MatchdayStore } from "./store";
 import { TxtWriter } from "./writer";
 import { MatchdayServer, APP_VERSION } from "./api";
-import { FIXED_ACCESS_PASSWORD } from "./auth";
 import { keepSystemAwake } from "./power";
 
 const WATCHDOG_INTERVAL_MS = 5_000;
@@ -27,11 +26,12 @@ function printHelp(): void {
 Uso:
   MatchdayControl.exe                 Arranca o servidor (cria config.json no primeiro arranque)
   MatchdayControl.exe --config PATH   Usa outra configuração
-  MatchdayControl.exe --set-pin 1887  Confirma a palavra-passe fixa
-  MatchdayControl.exe --print-pin     Mostra a palavra-passe fixa
+  MatchdayControl.exe --set-pin 123456  Define/atualiza o PIN operacional
+  MatchdayControl.exe --print-pin       Mostra o PIN inicial, se ainda existir
   MatchdayControl.exe --help          Mostra esta ajuda
 
-A palavra-passe operacional é fixa: ${FIXED_ACCESS_PASSWORD}.`);
+O PIN inicial é criado aleatoriamente na primeira execução. Guarda-o e altera-o
+com --set-pin depois de instalares a aplicação.`);
 }
 
 function processAlive(pid: number): boolean {
@@ -98,6 +98,46 @@ function logLanAddresses(port: number): void {
   }
 }
 
+function centerText(value: string, width: number): string {
+  const text = value.slice(0, width);
+  const left = Math.floor((width - text.length) / 2);
+  return `${" ".repeat(left)}${text}${" ".repeat(width - left - text.length)}`;
+}
+
+function printPinBox(pin: string): void {
+  const width = 52;
+  const border = `+${"-".repeat(width)}+`;
+  const useColor = process.stdout.isTTY === true;
+  const cyan = useColor ? "\x1b[96m" : "";
+  const yellow = useColor ? "\x1b[93m" : "";
+  const bold = useColor ? "\x1b[1m" : "";
+  const reset = useColor ? "\x1b[0m" : "";
+  const line = (text = "") => `${cyan}|${centerText(text, width)}|${reset}`;
+  const pinLeft = Math.floor((width - pin.length) / 2);
+  const pinRight = width - pinLeft - pin.length;
+  const pinLine = `${cyan}|${" ".repeat(pinLeft)}${yellow}${bold}${pin}${reset}${cyan}${" ".repeat(pinRight)}|${reset}`;
+
+  console.log("");
+  console.log(`${cyan}${border}${reset}`);
+  console.log(line("MATCHDAY CONTROL"));
+  console.log(line("PIN INICIAL - GUARDE-O"));
+  console.log(line());
+  console.log(pinLine);
+  console.log(line());
+  console.log(line("ABRA O PAINEL NO BROWSER"));
+  console.log(line("USE ESTE PIN PARA ENTRAR"));
+  console.log(line("ALTERE DEPOIS: --set-pin 123456"));
+  console.log(`${cyan}${border}${reset}`);
+  console.log("");
+}
+
+function printInitialPin(configPath: string): void {
+  const pinPath = join(dirname(configPath), "initial-pin.txt");
+  if (!existsSync(pinPath)) return;
+  const pin = readFileSync(pinPath, "utf8").trim();
+  if (/^\d{6}$/.test(pin)) printPinBox(pin);
+}
+
 function openBrowser(url: string): void {
   try {
     const command =
@@ -120,12 +160,19 @@ function main(): void {
   }
 
   if (hasArg("--print-pin")) {
-    console.log(`PALAVRA-PASSE: ${FIXED_ACCESS_PASSWORD}`);
+    const config = loadConfig({ configPath: argValue("--config") });
+    const pinPath = join(dirname(config.configPath), "initial-pin.txt");
+    if (existsSync(pinPath)) {
+      printPinBox(readFileSync(pinPath, "utf8").trim());
+    } else {
+      console.log("PIN já definido. Para criar um novo: --set-pin 123456");
+    }
     process.exit(0);
   }
 
   const setPin = argValue("--set-pin");
   const config = loadConfig({ configPath: argValue("--config"), setPin: setPin ?? null });
+  printInitialPin(config.configPath);
   const dataDir = dirname(config.configPath);
 
   const lockPath = join(dataDir, "matchday.lock");
@@ -157,7 +204,7 @@ function main(): void {
       `[server] Estado restaurado · v${session.state.version} · ${session.state.homeTeam} ${session.state.homeScore}-${session.state.awayScore} ${session.state.awayTeam}`,
     );
   } else {
-    console.log("[server] Sem controlo ativo. Abra http://localhost:8080 no PC e configure as equipas.");
+    console.log("[server] Sem controlo ativo. Abra http://localhost:8080 no computador anfitrião e configure as equipas.");
   }
 
   const server = app.start();

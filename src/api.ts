@@ -264,7 +264,7 @@ export class MatchdayServer {
       if (path === "/api/setup" && request.method === "POST") {
         this.requireAuth(request, url);
         if (!this.localCheck(request, server)) {
-          throw new HttpError(403, "O setup só pode ser feito a partir do PC do estádio (127.0.0.1).");
+          throw new HttpError(403, "A configuração inicial só pode ser feita no computador anfitrião (127.0.0.1).");
         }
         const body = await jsonObject(request) as { homeTeam?: unknown; awayTeam?: unknown };
         return jsonResponse(this.handleSetup(body));
@@ -395,7 +395,7 @@ export class MatchdayServer {
     } catch {
       return jsonResponse({ error: "Corpo JSON inválido." }, 400);
     }
-    if (typeof pin !== "string" || !verifyAccessPassword(pin)) {
+    if (typeof pin !== "string" || !verifyAccessPassword(pin, this.config.accessPinHash)) {
       const current = attempt ?? { count: 0, resetAt: now + AUTH_WINDOW_MS, lockedUntil: 0 };
       current.count += 1;
       if (current.count >= MAX_AUTH_ATTEMPTS) {

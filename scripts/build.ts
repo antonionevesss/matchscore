@@ -1,7 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { embedFonts } from "./embed-fonts.ts";
-import { createIco } from "./make-icon.ts";
 
 const root = resolve(import.meta.dir, "..");
 const dist = join(root, "dist");
@@ -72,8 +71,6 @@ if (existsSync(migratedConfig)) {
   }
 }
 
-await createIco(join(root, "assets", "app-icon.png"), join(root, "assets", "app-icon.ico"));
-
 console.log("[build] a compilar MatchdayControl.exe…");
 embedFonts();
 const result = Bun.spawnSync(
@@ -87,12 +84,11 @@ const result = Bun.spawnSync(
     "--minify",
     "--loader",
     ".html:text",
-    `--windows-icon=${join(root, "assets", "app-icon.ico")}`,
     "--windows-title=Matchday Control",
-    "--windows-publisher=Associação Académica de Coimbra",
+    "--windows-publisher=Matchday Control contributors",
     "--windows-description=Controlo do marcador e cenas OBS",
     "--windows-version=1.5.0.0",
-    "--windows-copyright=Associação Académica de Coimbra",
+    "--windows-copyright=Matchday Control contributors",
   ],
   { cwd: root, stdout: "inherit", stderr: "inherit" },
 );
