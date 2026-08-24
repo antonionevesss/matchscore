@@ -53,15 +53,15 @@ function formatOf(ext: string): string {
 }
 
 /**
- * Embute as fontes da pasta `fonts/` como data-URI no HTML da UI
- * (mantém o executável autónomo, sem ficheiros externos em runtime).
+ * Embeds fonts from `fonts/` as data URIs in the UI HTML
+ * (keeps the executable self-contained with no runtime external files).
  */
 export function embedFonts(): string {
   const files = readdirSync(FONTS_DIR)
     .filter((file) => /\.(ttf|otf|woff|woff2)$/i.test(file))
     .sort();
   if (files.length === 0) {
-    throw new Error(`Sem fontes em ${FONTS_DIR} (esperado Poppins e Albireo).`);
+    throw new Error(`No fonts found in ${FONTS_DIR} (expected Poppins and Albireo).`);
   }
   const faces = files
     .map((file) => {
@@ -83,7 +83,7 @@ export function embedFonts(): string {
     html = html.slice(0, start) + block + html.slice(end);
   } else {
     throw new Error(
-      `Marcadores ${START_MARKER} / ${END_MARKER} não encontrados em ${HTML_PATH}.`,
+      `Markers ${START_MARKER} / ${END_MARKER} not found in ${HTML_PATH}.`,
     );
   }
   writeFileSync(HTML_PATH, html, "utf8");
@@ -92,5 +92,5 @@ export function embedFonts(): string {
 
 if (import.meta.main) {
   const css = embedFonts();
-  console.log(`[fonts] ${css.length} bytes de @font-face embutidos em src/ui/index.html`);
+  console.log(`[fonts] embedded ${css.length} bytes of @font-face data in src/ui/index.html`);
 }

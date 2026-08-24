@@ -30,7 +30,7 @@ export function keepSystemAwake(): PowerRequest {
 
     const previousState = kernel32.symbols.SetThreadExecutionState(KEEP_SYSTEM_AWAKE);
     if (previousState === 0) {
-      console.warn("[power] Não foi possível impedir a suspensão automática do Windows.");
+      console.warn("[power] Could not prevent automatic Windows sleep.");
       return NOOP_REQUEST;
     }
 
@@ -44,7 +44,7 @@ export function keepSystemAwake(): PowerRequest {
     };
   } catch (error) {
     console.warn(
-      `[power] Controlo de energia indisponível: ${error instanceof Error ? error.message : String(error)}`,
+      `[power] Power control unavailable: ${error instanceof Error ? error.message : String(error)}`,
     );
     return NOOP_REQUEST;
   }

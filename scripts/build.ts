@@ -15,9 +15,9 @@ function migrateRuntimeFile(name: string): void {
   if (!existsSync(source) || existsSync(target)) return;
   try {
     renameSync(source, target);
-    console.log(`[build] migrado: ${name} → data/${name}`);
+    console.log(`[build] migrated: ${name} → data/${name}`);
   } catch (error) {
-    console.warn(`[build] não foi possível migrar ${name}: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[build] could not migrate ${name}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -40,7 +40,7 @@ function removeStaleLock(lockPath: string): void {
     const pid = Number(readFileSync(lockPath, "utf8").trim());
     if (Number.isInteger(pid) && pid > 0 && processAlive(pid)) return;
     unlinkSync(lockPath);
-    console.log(`[build] removido lock antigo: ${lockPath}`);
+    console.log(`[build] removed stale lock: ${lockPath}`);
   } catch {
     // Se não for possível confirmar que é antigo, preserva-se por segurança.
   }
@@ -64,14 +64,14 @@ if (existsSync(migratedConfig)) {
     if (payload.outputDir === "scoreboard") {
       payload.outputDir = "../scoreboard";
       writeFileSync(migratedConfig, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-      console.log("[build] atualizado outputDir para a nova estrutura data/scoreboard.");
+      console.log("[build] updated outputDir for the data/scoreboard layout.");
     }
   } catch (error) {
-    console.warn(`[build] não foi possível ajustar data/config.json: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[build] could not update data/config.json: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-console.log("[build] a compilar MatchdayControl.exe…");
+console.log("[build] compiling MatchdayControl.exe…");
 embedFonts();
 const result = Bun.spawnSync(
   [
@@ -86,7 +86,7 @@ const result = Bun.spawnSync(
     ".html:text",
     "--windows-title=Matchday Control",
     "--windows-publisher=Matchday Control contributors",
-    "--windows-description=Controlo do marcador e cenas OBS",
+    "--windows-description=Scoreboard control and OBS scenes",
     "--windows-version=1.5.0.0",
     "--windows-copyright=Matchday Control contributors",
   ],
@@ -101,9 +101,9 @@ for (const file of ["install-service.cmd", "uninstall-service.cmd"]) {
   copyFileSync(join(root, file), join(dist, file));
 }
 
-console.log("[build] concluído:");
+console.log("[build] complete:");
 console.log(`  ${join(dist, "MatchdayControl.exe")}`);
-console.log(`  ${join(dist, "scoreboard")} (pasta dos ficheiros .txt)`);
-console.log(`  ${join(dist, "data")} (configuração e dados internos)`);
+console.log(`  ${join(dist, "scoreboard")} (.txt output files)`);
+console.log(`  ${join(dist, "data")} (configuration and internal data)`);
 console.log(`  ${join(dist, "install-service.cmd")}`);
 console.log(`  ${join(dist, "uninstall-service.cmd")}`);

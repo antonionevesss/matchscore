@@ -31,7 +31,7 @@ test("primeiro arranque grava outputDir relativo 'scoreboard' e resolve junto do
     assert.equal(stored.obs.enabled, false);
     assert.equal(stored.obs.host, "127.0.0.1");
     assert.equal(stored.obs.port, 4455);
-    assert.equal(stored.obs.scenes.matchscore, "Marcador");
+    assert.equal(stored.obs.scenes.matchscore, "Match score");
     assert.ok(stored.tokenSecret.length >= 32);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -99,7 +99,7 @@ test("tokenSecret não hexadecimal é rejeitado", () => {
   try {
     const configPath = join(dir, "config.json");
     writeFileSync(configPath, JSON.stringify({ tokenSecret: "segredo previsível que não é hexadecimal" }));
-    assert.throws(() => loadConfig({ configPath }), /caracteres hexadecimais/);
+    assert.throws(() => loadConfig({ configPath }), /hexadecimal characters/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

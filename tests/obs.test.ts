@@ -88,6 +88,6 @@ test("cliente OBS autentica, liga e troca a cena", async () => {
 test("cliente OBS desativado não tenta ligar", async () => {
   const client = new ObsWebSocketClient();
   assert.equal(client.status().enabled, false);
-  await assert.rejects(() => client.setScene("matchscore"), /desativada/);
+  await assert.rejects(() => client.setScene("matchscore"), /disabled/);
   client.stop();
 });

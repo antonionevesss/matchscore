@@ -1,205 +1,208 @@
 # Matchday Control
 
-Controlador de marcador para jogos e transmissões locais. Corre num PC
-Windows, disponibiliza um painel web para telemóvel ou computador e mantém
-ficheiros .txt que podem ser lidos pelo OBS ou por outro software de grafismo.
+Standalone scoreboard controller for local matches and broadcasts. It runs on
+Windows, provides a web control panel for phones or computers, and writes `.txt`
+files that can be consumed by OBS or other graphics software.
 
-O projeto é agnóstico a clubes: nomes das equipas, ficheiros de saída, cenas OBS
-e rede são configurados por instalação.
+The project is club-agnostic: team names, output files, OBS scenes, and network
+settings are configured per installation.
 
-~~~text
-Operador (browser)
-       │ HTTP + SSE na rede local
+```text
+Operator (browser)
+       │ HTTP + SSE over the local network
        ▼
 Matchday Control (Windows)
-       ├── ficheiros .txt do marcador
-       └── OBS WebSocket 5.x (opcional)
-~~~
+       ├── scoreboard .txt files
+       └── OBS WebSocket 5.x (optional)
+```
 
-## Funcionalidade
+## Features
 
-- Nomes das equipas, resultado, relógio, períodos e prolongamento.
-- Anular a última ação, trocar lados e reiniciar o jogo.
-- Escrita atómica dos ficheiros do marcador, apenas quando o conteúdo muda.
-- Estado persistente em SQLite, com histórico e backups rotativos.
-- Três cenas OBS opcionais através de WebSocket.
-- API HTTP e eventos SSE em tempo real.
-- Execução como tarefa agendada do Windows, com reinício em caso de falha.
+- Team names, score, clock, periods, and extra time.
+- Undo the last action, swap sides, and reset the match.
+- Atomic scoreboard file writes, only when content changes.
+- Persistent SQLite state with history and rotating backups.
+- Three optional OBS scenes through WebSocket.
+- HTTP API and real-time SSE events.
+- Windows scheduled-task support with automatic restart.
 
-## Requisitos
+## Requirements
 
-Para executar o executável empacotado:
+To run the packaged executable:
 
-- Windows 10 ou 11;
-- permissões de escrita na pasta de saída do marcador;
-- uma rede local comum ao PC e aos dispositivos que vão operar o painel.
+- Windows 10 or 11;
+- write permission for the scoreboard output folder;
+- a local network shared by the host PC and the devices operating the panel.
 
-Para desenvolver ou compilar:
+To develop or build:
 
-- Bun 1.2 ou superior;
-- Windows para gerar e testar o executável .exe.
+- Bun 1.2 or newer;
+- Windows to generate and test the `.exe`.
 
-O OBS é opcional. Só é necessário para usar as ações de mudança de cena, com o
-WebSocket do OBS 5.x ativo.
+OBS is optional. It is only required for scene switching, with the OBS 5.x
+WebSocket server enabled.
 
-## Desenvolvimento rápido
+## Quick start
 
-~~~sh
+```sh
 bun install
 bun run dev
-~~~
+```
 
-Abre http://localhost:8080 no computador anfitrião. No primeiro arranque o
-executável mostra o PIN aleatório numa caixa de destaque na consola e guarda-o
-temporariamente em data/initial-pin.txt. Usa-o para entrar e configura a equipa
-da casa e a equipa visitante.
+Open `http://localhost:8080` on the host computer. On first launch, the
+executable prints a random PIN in a high-visibility console box and temporarily
+saves it to `data/initial-pin.txt`. Use it to sign in and configure the home and
+away teams.
 
-Para aceder a partir de outro dispositivo, abre http://IP_DO_PC:8080 na mesma
-rede local. O IP é mostrado na consola ou pode ser consultado com ipconfig.
+The control panel defaults to English. The UI language can be changed to
+Português (Portugal) from the language selector and is remembered in the browser.
 
-## Executável Windows
+To connect from another device, open `http://HOST_IP:8080` on the same local
+network. The host IP is shown in the console or can be found with `ipconfig`.
 
-~~~sh
+## Windows executable
+
+```sh
 bun install
 bun run build
-~~~
+```
 
-O build cria:
+The build creates:
 
-~~~text
+```text
 dist/
 ├── MatchdayControl.exe
-├── data/                 # configuração, SQLite, backups e lock
-├── scoreboard/           # ficheiros .txt consumidos pelo grafismo
+├── data/                 # configuration, SQLite, backups, and lock
+├── scoreboard/           # .txt files consumed by the graphics system
 ├── install-service.cmd
 └── uninstall-service.cmd
-~~~
+```
 
-O executável é autónomo e não precisa de Bun no PC de operação.
+The executable is self-contained and does not require Bun on the operator PC.
 
-As fontes em fonts/ fazem parte do design do projeto e são embutidas no painel
-durante o build. Para regenerar esse bloco depois de alterar as fontes, executa
-bun run fonts.
+The fonts in `fonts/` are part of the project design and are embedded into the
+panel during the build. Run `bun run fonts` after changing a font file.
 
-Antes de instalar a tarefa do Windows, define um PIN próprio:
+Before installing the Windows scheduled task, set a personal PIN:
 
-~~~bat
+```bat
 MatchdayControl.exe --print-pin
 MatchdayControl.exe --set-pin 123456
-~~~
+```
 
-O PIN deve ter exatamente seis algarismos. O comando print-pin volta a mostrar
-o PIN inicial em destaque enquanto ele ainda existir. O hash fica em
-data/config.json; o PIN inicial é removido quando se define um novo.
+The PIN must contain exactly six digits. `--print-pin` shows the initial PIN in
+the console box while it still exists. The hash is stored in `data/config.json`;
+the initial PIN file is removed after a new PIN is set.
 
-Para arranque automático, copia o executável e os dois scripts .cmd para uma
-pasta com permissões de escrita, como C:/Scoreboard/MatchdayControl, e executa
-install-service.cmd como Administrador. Para remover a tarefa, executa
-uninstall-service.cmd. Também é possível executar o .exe diretamente.
+To start automatically, copy the executable and both `.cmd` scripts to a
+writable folder such as `C:/Scoreboard/MatchdayControl`, then run
+`install-service.cmd` as Administrator. Run `uninstall-service.cmd` to remove
+the scheduled task. The `.exe` can also be run directly.
 
-## Configuração
+## Configuration
 
-No primeiro arranque é criado data/config.json. config.example.json serve como
-referência para instalações personalizadas.
+The first launch creates `data/config.json`. `config.example.json` is a template
+for customised installations.
 
-| Campo | Default | Função |
+| Field | Default | Purpose |
 | --- | --- | --- |
-| outputDir | ../scoreboard no pacote | Pasta dos ficheiros .txt |
-| files | nomes Home/Away/Clock | Mapeamento dos valores para o grafismo |
-| openBrowserOnStart | true | Abre o painel no PC ao arrancar |
-| port | 8080 | Porta HTTP |
-| bind | 0.0.0.0 | Interface de rede |
-| accessPinHash | automático | Hash do PIN operacional |
-| tokenSecret | automático | Segredo dos tokens de sessão |
-| tokenTtlMs | 43200000 | Validade da sessão em milissegundos |
-| obs.enabled | false | Ativa a integração com OBS |
-| obs.host / obs.port | 127.0.0.1:4455 | Endereço do WebSocket do OBS |
-| obs.password | vazio | Palavra-passe do WebSocket do OBS |
-| obs.scenes | nomes genéricos | Nomes das três cenas |
+| `outputDir` | `../scoreboard` in the package | Folder for `.txt` files |
+| `files` | Home/Away/Clock names | Maps values to graphics consumers |
+| `openBrowserOnStart` | `true` | Opens the panel on the host at startup |
+| `port` | `8080` | HTTP port |
+| `bind` | `0.0.0.0` | Network interface |
+| `accessPinHash` | generated automatically | Operational PIN hash |
+| `tokenSecret` | generated automatically | Session-token secret |
+| `tokenTtlMs` | `43200000` | Session lifetime in milliseconds |
+| `obs.enabled` | `false` | Enables OBS integration |
+| `obs.host` / `obs.port` | `127.0.0.1:4455` | OBS WebSocket address |
+| `obs.password` | empty | OBS WebSocket password |
+| `obs.scenes` | generic names | Names of the three scenes |
 
-Depois de alterar a configuração, reinicia a aplicação. As equipas podem ser
-alteradas no próprio painel, sem editar o JSON.
+Restart the application after changing configuration. Team names can be changed
+from the panel without editing JSON.
 
-### Ficheiros de saída
+### Output files
 
-Por defeito, são escritos estes cinco ficheiros UTF-8:
+By default, these five UTF-8 files are written:
 
-~~~text
-Home Name.txt    nome da equipa da casa
-Home Score.txt   resultado da equipa da casa
-Away Name.txt   nome da equipa visitante
-Away Score.txt  resultado da equipa visitante
-Clock.txt        relógio no formato MM:SS
-~~~
+```text
+Home Name.txt    home team name
+Home Score.txt   home team score
+Away Name.txt    away team name
+Away Score.txt   away team score
+Clock.txt        clock in MM:SS format
+```
 
-As escritas são atómicas. Os nomes podem ser alterados em files para manter
-uma integração existente.
+Writes are atomic. Change the names under `files` to preserve an existing
+graphics integration.
 
-### Relógio
+### Clock
 
-O relógio é contínuo, deriva do estado persistido e nunca ultrapassa o limite
-do período em curso:
+The clock is continuous, derived from persisted state, and never exceeds the
+limit of the current period:
 
-| Período | Limite |
+| Period | Limit |
 | --- | ---: |
-| 1.ª parte | 45:00 |
-| 2.ª parte | 90:00 |
-| 1.ª parte do prolongamento | 105:00 |
-| 2.ª parte do prolongamento | 120:00 |
+| First half | 45:00 |
+| Second half | 90:00 |
+| Extra time first half | 105:00 |
+| Extra time second half | 120:00 |
 
-Não há compensação automática.
+Automatic added time is not included.
 
 ## API
 
-As rotas privadas usam Authorization: Bearer token depois de autenticar em
-POST /api/auth com o PIN operacional.
+Private routes use `Authorization: Bearer <token>` after authenticating at
+`POST /api/auth` with the operational PIN.
 
-- GET /api/health — estado operacional, escrita e OBS;
-- GET /api/state — snapshot atual;
-- GET /api/stream — eventos SSE;
-- POST /api/command — executa uma ação com controlo de versão;
-- POST /api/setup — cria o jogo inicial; apenas no computador anfitrião;
-- GET/PUT /api/obs/settings — lê/altera a configuração OBS;
-- POST /api/obs/test — testa a ligação ao OBS;
-- POST /api/obs/scene — muda para uma das cenas configuradas.
+- `GET /api/health` — operational, output, and OBS status;
+- `GET /api/state` — current snapshot;
+- `GET /api/stream` — SSE events;
+- `POST /api/command` — executes a version-controlled action;
+- `POST /api/setup` — creates the initial match; host computer only;
+- `GET/PUT /api/obs/settings` — reads or updates OBS configuration;
+- `POST /api/obs/test` — tests the OBS connection;
+- `POST /api/obs/scene` — switches to a configured scene.
 
-## Comandos de desenvolvimento
+## Development commands
 
-~~~sh
+```sh
 bun run dev
 bun run typecheck
 bun test
 bun run build
-~~~
+```
 
-Estrutura principal:
+Main structure:
 
-~~~text
-src/domain/   regras do jogo e relógio
-src/api.ts    HTTP, autenticação e SSE
-src/store.ts  SQLite, histórico e recuperação
-src/writer.ts ficheiros .txt atómicos
-src/obs.ts    cliente OBS WebSocket
-src/ui/       painel web embutido
-scripts/      build e empacotamento
-tests/        testes do domínio, API e executável
-~~~
+```text
+src/domain/   match and clock rules
+src/api.ts    HTTP, authentication, and SSE
+src/store.ts  SQLite, history, and recovery
+src/writer.ts atomic .txt files
+src/obs.ts    OBS WebSocket client
+src/ui/       embedded web panel
+scripts/      build and packaging
+tests/        domain, API, and executable tests
+```
 
-## Segurança e limites
+## Security and scope
 
-- Destinado a uma rede local confiável; não exponhas o servidor diretamente à
-  Internet.
-- Usa um PIN por instalação, sessões assinadas e limitação de tentativas.
-- Protege a pasta data/, que contém a configuração e as credenciais do OBS.
-- A configuração inicial fica limitada a 127.0.0.1.
-- Não existem utilizadores, roles ou permissões distintas.
-- Não inclui cartões, substituições, compensação automática ou animações de golo.
+- Intended for a trusted local network; do not expose the server directly to
+  the Internet.
+- Uses one PIN per installation, signed sessions, and attempt limiting.
+- Protect `data/`, which contains configuration and OBS credentials.
+- Initial setup is limited to `127.0.0.1`.
+- There are no users, roles, or separate permission levels.
+- Cards, substitutions, automatic added time, and goal animations are outside
+  the current scope.
 
-## Contribuir
+## Contributing
 
-Consulta CONTRIBUTING.md antes de abrir uma alteração. Problemas de segurança
-devem seguir SECURITY.md, não ser publicados num issue.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change. Security issues
+must follow [SECURITY.md](SECURITY.md) and should not be posted in a public issue.
 
-## Licença
+## License
 
-Distribuído sob a licença MIT.
+Distributed under the MIT License.

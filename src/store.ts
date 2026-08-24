@@ -10,7 +10,7 @@ export interface PersistedSession {
 
 export class ConflictError extends Error {
   constructor() {
-    super("O estado mudou noutro dispositivo.");
+    super("The state changed on another device.");
     this.name = "ConflictError";
   }
 }
@@ -34,12 +34,12 @@ export class MatchdayStore {
     let startupError: string | null = null;
     let restoredFromBackup = false;
     if (!isDatabaseUsable(dbPath)) {
-      startupError = "Base de dados corrompida ou estado persistido inválido.";
+      startupError = "Database is corrupt or persisted state is invalid.";
       if (restoreFromBackup(dbPath, backupPaths)) {
         restoredFromBackup = true;
-        console.warn(`[store] ${startupError} Restaurado do backup.`);
+        console.warn(`[store] ${startupError} Restored from backup.`);
       } else {
-        console.error(`[store] ${startupError} Sem backup válido; a recomeçar vazio.`);
+        console.error(`[store] ${startupError} No valid backup; starting empty.`);
         // Não apaga nada: guarda o ficheiro corrompido à parte para diagnóstico.
         try {
           renameSync(dbPath, `${dbPath}.corrupt`);

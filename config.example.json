@@ -16,9 +16,9 @@
     "port": 4455,
     "password": "",
     "scenes": {
-      "matchscore": "Marcador",
-      "goal": "Alerta de golo",
-      "sponsors": "Patrocinadores"
+      "matchscore": "Match score",
+      "goal": "Goal alert",
+      "sponsors": "Sponsors"
     }
   },
   "accessPinHash": "",

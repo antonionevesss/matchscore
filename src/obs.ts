@@ -82,7 +82,7 @@ export class ObsWebSocketClient {
     this.stopped = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
-    this.rejectPending(new Error("Ligação OBS terminada."));
+    this.rejectPending(new Error("OBS connection stopped."));
     const socket = this.socket;
     this.socket = null;
     this.identified = false;
@@ -103,8 +103,8 @@ export class ObsWebSocketClient {
   }
 
   async setScene(key: ObsSceneKey): Promise<{ sceneKey: ObsSceneKey; sceneName: string }> {
-    if (!OBS_SCENE_KEYS.includes(key)) throw new Error("Cena OBS inválida.");
-    if (!this.config.enabled) throw new Error("A ligação OBS está desativada na configuração.");
+    if (!OBS_SCENE_KEYS.includes(key)) throw new Error("Invalid OBS scene.");
+    if (!this.config.enabled) throw new Error("OBS integration is disabled in the configuration.");
 
     try {
       await this.connect();
@@ -120,7 +120,7 @@ export class ObsWebSocketClient {
   }
 
   async testConnection(): Promise<ObsStatus> {
-    if (!this.config.enabled) throw new Error("A ligação OBS está desativada na configuração.");
+    if (!this.config.enabled) throw new Error("OBS integration is disabled in the configuration.");
     try {
       await this.connect();
       await this.request("GetVersion", {});
@@ -174,7 +174,7 @@ export class ObsWebSocketClient {
         try {
           message = JSON.parse(String(event.data)) as ObsMessage;
         } catch {
-          fail(new Error("Resposta inválida do OBS WebSocket."));
+          fail(new Error("Invalid OBS WebSocket response."));
           return;
         }
 
@@ -217,19 +217,19 @@ export class ObsWebSocketClient {
           this.pending.delete(data.requestId);
           clearTimeout(pending.timer);
           if (data.requestStatus?.result === true) pending.resolve(data);
-          else pending.reject(new Error(data.requestStatus?.comment || "O OBS rejeitou o pedido."));
+          else pending.reject(new Error(data.requestStatus?.comment || "OBS rejected the request."));
         }
       };
 
-      socket.onerror = () => fail(new Error("Não foi possível ligar ao OBS WebSocket."));
+      socket.onerror = () => fail(new Error("Could not connect to the OBS WebSocket."));
       socket.onclose = () => {
         this.socket = null;
         this.identified = false;
         if (!settled) {
           settled = true;
-          reject(new Error(this.lastError || "A ligação OBS foi encerrada."));
+          reject(new Error(this.lastError || "The OBS connection was closed."));
         }
-        this.rejectPending(new Error("A ligação OBS foi encerrada."));
+        this.rejectPending(new Error("The OBS connection was closed."));
         this.scheduleReconnect();
       };
     }).finally(() => {
@@ -242,13 +242,13 @@ export class ObsWebSocketClient {
   private request(requestType: string, requestData: Record<string, unknown>): Promise<unknown> {
     const socket = this.socket;
     if (!socket || !this.identified || socket.readyState !== WebSocket.OPEN) {
-      return Promise.reject(new Error("OBS não está ligado."));
+      return Promise.reject(new Error("OBS is not connected."));
     }
     const requestId = randomUUID();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
-        reject(new Error("Tempo esgotado ao comunicar com o OBS."));
+        reject(new Error("OBS communication timed out."));
       }, REQUEST_TIMEOUT_MS);
       this.pending.set(requestId, { resolve, reject, timer });
       try {

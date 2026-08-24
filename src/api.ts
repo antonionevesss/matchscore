@@ -163,30 +163,30 @@ export class MatchdayServer {
 
   private updateObsSettings(body: unknown): Record<string, unknown> {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
-      throw new HttpError(400, "Configuração OBS inválida.");
+      throw new HttpError(400, "Invalid OBS configuration.");
     }
     const source = body as Record<string, unknown>;
     if (source.enabled !== undefined && typeof source.enabled !== "boolean") {
-      throw new HttpError(400, "O estado OBS deve ser booleano.");
+      throw new HttpError(400, "OBS enabled must be a boolean.");
     }
     if (source.host !== undefined && (typeof source.host !== "string" || !source.host.trim())) {
-      throw new HttpError(400, "O host OBS é obrigatório.");
+      throw new HttpError(400, "OBS host is required.");
     }
     if (source.port !== undefined && (!Number.isInteger(Number(source.port)) || Number(source.port) < 1 || Number(source.port) > 65535)) {
-      throw new HttpError(400, "A porta OBS é inválida.");
+      throw new HttpError(400, "OBS port is invalid.");
     }
     if (source.password !== undefined && typeof source.password !== "string") {
-      throw new HttpError(400, "A palavra-passe OBS é inválida.");
+      throw new HttpError(400, "OBS password is invalid.");
     }
     const current = this.obsConfig();
     const scenePatch = source.scenes;
     if (scenePatch !== undefined && (!scenePatch || typeof scenePatch !== "object" || Array.isArray(scenePatch))) {
-      throw new HttpError(400, "As cenas OBS são inválidas.");
+      throw new HttpError(400, "OBS scenes are invalid.");
     }
     const scenes = { ...current.scenes, ...(scenePatch as Record<string, unknown> | undefined) };
     for (const key of OBS_SCENE_KEYS) {
       if (typeof scenes[key] !== "string" || !scenes[key].trim()) {
-        throw new HttpError(400, `O nome da cena ${key} é obrigatório.`);
+        throw new HttpError(400, `The ${key} scene name is required.`);
       }
     }
     const next = normalizeObsConfig({
@@ -235,7 +235,7 @@ export class MatchdayServer {
         try {
           return jsonResponse({ obs: await this.obs.testConnection() });
         } catch (error) {
-          throw new HttpError(503, error instanceof Error ? error.message : "OBS indisponível.", {
+          throw new HttpError(503, error instanceof Error ? error.message : "OBS unavailable.", {
             obs: this.obs.status(),
           });
         }
@@ -249,13 +249,13 @@ export class MatchdayServer {
         this.requireAuth(request, url);
         const body = await jsonObject(request) as { sceneKey?: unknown };
         if (typeof body.sceneKey !== "string" || !OBS_SCENE_KEYS.includes(body.sceneKey as ObsSceneKey)) {
-          throw new HttpError(400, "Cena OBS inválida.");
+          throw new HttpError(400, "Invalid OBS scene.");
         }
         let result: { sceneKey: ObsSceneKey; sceneName: string };
         try {
           result = await this.setObsScene(body.sceneKey as ObsSceneKey);
         } catch (error) {
-          throw new HttpError(503, error instanceof Error ? error.message : "OBS indisponível.", {
+          throw new HttpError(503, error instanceof Error ? error.message : "OBS unavailable.", {
             obs: this.obs.status(),
           });
         }
@@ -264,7 +264,7 @@ export class MatchdayServer {
       if (path === "/api/setup" && request.method === "POST") {
         this.requireAuth(request, url);
         if (!this.localCheck(request, server)) {
-          throw new HttpError(403, "A configuração inicial só pode ser feita no computador anfitrião (127.0.0.1).");
+          throw new HttpError(403, "Initial setup can only be completed on the host computer (127.0.0.1).");
         }
         const body = await jsonObject(request) as { homeTeam?: unknown; awayTeam?: unknown };
         return jsonResponse(this.handleSetup(body));
@@ -272,22 +272,22 @@ export class MatchdayServer {
       if (path === "/api/health" && request.method === "GET") {
         return jsonResponse(this.health());
       }
-      return jsonResponse({ error: "Não encontrado." }, 404);
+      return jsonResponse({ error: "Not found." }, 404);
     } catch (error) {
       if (error instanceof HttpError) {
         return jsonResponse({ error: error.message, ...error.extra }, error.status);
       }
       if (error instanceof ConflictError) {
         return jsonResponse(
-          { error: "O estado do jogo mudou noutro dispositivo.", snapshot: this.snapshot() },
+          { error: "The match state changed on another device.", snapshot: this.snapshot() },
           409,
         );
       }
       if (error instanceof SyntaxError) {
-        return jsonResponse({ error: "Corpo JSON inválido." }, 400);
+        return jsonResponse({ error: "Invalid JSON body." }, 400);
       }
       console.error(`[api] ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-      return jsonResponse({ error: "Erro interno." }, 500);
+      return jsonResponse({ error: "Internal error." }, 500);
     }
   }
 
@@ -297,17 +297,17 @@ export class MatchdayServer {
     const baseVersion = Number(body.baseVersion);
     const action = body.action as MatchdayCommandAction | undefined;
     if (!Number.isInteger(baseVersion) || baseVersion < 1) {
-      throw new HttpError(400, "baseVersion inválido.");
+      throw new HttpError(400, "baseVersion is invalid.");
     }
     if (!isMatchdayCommandAction(action)) {
-      throw new HttpError(400, "Ação inválida.");
+      throw new HttpError(400, "Invalid action.");
     }
     const session = this.store.load();
     if (!session.state) {
-      throw new HttpError(404, "Sem controlo ativo. Configure as equipas primeiro.");
+      throw new HttpError(404, "No active match. Configure the teams first.");
     }
     if (baseVersion !== session.state.version) {
-      throw new HttpError(409, "O estado do jogo mudou noutro dispositivo.", { snapshot: this.snapshot() });
+      throw new HttpError(409, "The match state changed on another device.", { snapshot: this.snapshot() });
     }
     return jsonResponse(this.applyCommandAction(action));
   }
@@ -316,7 +316,7 @@ export class MatchdayServer {
     const homeTeam = normalizeTeamName(String(body.homeTeam ?? ""));
     const awayTeam = normalizeTeamName(String(body.awayTeam ?? ""));
     if (!homeTeam || !awayTeam) {
-      throw new HttpError(422, "Indica as duas equipas.");
+      throw new HttpError(422, "Enter both teams.");
     }
     const session = this.store.load();
     const now = new Date().toISOString();
@@ -343,7 +343,7 @@ export class MatchdayServer {
       this.writer.probe();
     } catch (error) {
       filesOk = false;
-      lastError = `Diretoria de saída não escrevível (${this.writer.outputDir}): ${error instanceof Error ? error.message : String(error)}`;
+      lastError = `Output directory is not writable (${this.writer.outputDir}): ${error instanceof Error ? error.message : String(error)}`;
     }
     if (this.writer.lastError) {
       filesOk = false;
@@ -369,7 +369,7 @@ export class MatchdayServer {
 
   private requireAuth(request: Request, url: URL): void {
     const token = bearerToken(request) ?? url.searchParams.get("token");
-    if (!token) throw new HttpError(401, "Autenticação necessária.");
+    if (!token) throw new HttpError(401, "Authentication required.");
     const result = verifyToken(token, this.config.tokenSecret);
     if (!result.ok) {
       throw new HttpError(401, tokenErrorLabel(result));
@@ -386,14 +386,14 @@ export class MatchdayServer {
     const attempt = stored && stored.resetAt > now ? stored : undefined;
     if (attempt && attempt.lockedUntil > now) {
       const seconds = Math.ceil((attempt.lockedUntil - now) / 1000);
-      return jsonResponse({ error: `Demasiadas tentativas. Tenta de novo em ${seconds}s.` }, 429);
+      return jsonResponse({ error: `Too many attempts. Try again in ${seconds}s.` }, 429);
     }
     let pin: unknown;
     try {
       const body = (await request.json()) as { pin?: unknown };
       pin = body.pin;
     } catch {
-      return jsonResponse({ error: "Corpo JSON inválido." }, 400);
+      return jsonResponse({ error: "Invalid JSON body." }, 400);
     }
     if (typeof pin !== "string" || !verifyAccessPassword(pin, this.config.accessPinHash)) {
       const current = attempt ?? { count: 0, resetAt: now + AUTH_WINDOW_MS, lockedUntil: 0 };
@@ -403,7 +403,7 @@ export class MatchdayServer {
         current.count = 0;
       }
       this.authAttempts.set(key, current);
-      return jsonResponse({ error: "Palavra-passe incorreta." }, 401);
+      return jsonResponse({ error: "Incorrect PIN." }, 401);
     }
     this.authAttempts.delete(key);
     const token = signToken(this.config.tokenSecret, this.config.tokenTtlMs);
@@ -475,8 +475,8 @@ function bearerToken(request: Request): string | null {
 }
 
 function tokenErrorLabel(result: TokenVerification): string {
-  if (result.ok) return "Sessão inválida.";
-  return result.reason === "expired" ? "Sessão expirada. Entra de novo com o PIN." : "Sessão inválida.";
+  if (result.ok) return "Invalid session.";
+  return result.reason === "expired" ? "Session expired. Sign in again with the PIN." : "Invalid session.";
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -489,7 +489,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 async function jsonObject(request: Request): Promise<Record<string, unknown>> {
   const body: unknown = await request.json();
   if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new HttpError(400, "O corpo JSON deve ser um objeto.");
+    throw new HttpError(400, "The JSON body must be an object.");
   }
   return body as Record<string, unknown>;
 }

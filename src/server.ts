@@ -23,15 +23,15 @@ function hasArg(name: string): boolean {
 function printHelp(): void {
   console.log(`Matchday Control v${APP_VERSION}
 
-Uso:
-  MatchdayControl.exe                 Arranca o servidor (cria config.json no primeiro arranque)
-  MatchdayControl.exe --config PATH   Usa outra configuração
-  MatchdayControl.exe --set-pin 123456  Define/atualiza o PIN operacional
-  MatchdayControl.exe --print-pin       Mostra o PIN inicial, se ainda existir
-  MatchdayControl.exe --help          Mostra esta ajuda
+Usage:
+  MatchdayControl.exe                   Start the server (creates config.json on first run)
+  MatchdayControl.exe --config PATH     Use another configuration
+  MatchdayControl.exe --set-pin 123456  Set or update the operational PIN
+  MatchdayControl.exe --print-pin       Show the initial PIN, if it still exists
+  MatchdayControl.exe --help            Show this help
 
-O PIN inicial é criado aleatoriamente na primeira execução. Guarda-o e altera-o
-com --set-pin depois de instalares a aplicação.`);
+The initial PIN is generated randomly on first run. Save it and change it with
+--set-pin after installing the application.`);
 }
 
 function processAlive(pid: number): boolean {
@@ -88,7 +88,7 @@ function releaseLock(lockPath: string): void {
 }
 
 function logLanAddresses(port: number): void {
-  console.log(`[server] Controlo disponível em http://localhost:${port} (rede local: http://IP:${port})`);
+  console.log(`[server] Control available at http://localhost:${port} (local network: http://IP:${port})`);
   for (const [name, addresses] of Object.entries(networkInterfaces())) {
     for (const address of addresses ?? []) {
       if (address.family === "IPv4" && !address.internal) {
@@ -120,13 +120,13 @@ function printPinBox(pin: string): void {
   console.log("");
   console.log(`${cyan}${border}${reset}`);
   console.log(line("MATCHDAY CONTROL"));
-  console.log(line("PIN INICIAL - GUARDE-O"));
+  console.log(line("INITIAL PIN - SAVE IT"));
   console.log(line());
   console.log(pinLine);
   console.log(line());
-  console.log(line("ABRA O PAINEL NO BROWSER"));
-  console.log(line("USE ESTE PIN PARA ENTRAR"));
-  console.log(line("ALTERE DEPOIS: --set-pin 123456"));
+  console.log(line("OPEN THE PANEL IN YOUR BROWSER"));
+  console.log(line("USE THIS PIN TO SIGN IN"));
+  console.log(line("CHANGE IT LATER: --set-pin 123456"));
   console.log(`${cyan}${border}${reset}`);
   console.log("");
 }
@@ -145,10 +145,10 @@ function openBrowser(url: string): void {
         ? ["cmd", "/c", "start", "", url]
         : ["xdg-open", url];
     Bun.spawn(command, { stdout: "ignore", stderr: "ignore" });
-    console.log(`[server] A abrir o controlo no browser: ${url}`);
+    console.log(`[server] Opening the control panel in the browser: ${url}`);
   } catch (error) {
     console.warn(
-      `[server] Não foi possível abrir o browser: ${error instanceof Error ? error.message : String(error)}`,
+      `[server] Could not open the browser: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
@@ -165,7 +165,7 @@ function main(): void {
     if (existsSync(pinPath)) {
       printPinBox(readFileSync(pinPath, "utf8").trim());
     } else {
-      console.log("PIN já definido. Para criar um novo: --set-pin 123456");
+      console.log("PIN already set. To create a new one: --set-pin 123456");
     }
     process.exit(0);
   }
@@ -177,7 +177,7 @@ function main(): void {
 
   const lockPath = join(dataDir, "matchday.lock");
   if (!acquireLock(lockPath)) {
-    console.error("[server] Outra instância do Matchday Control já está a correr.");
+    console.error("[server] Another Matchday Control instance is already running.");
     process.exit(1);
   }
 
@@ -191,7 +191,7 @@ function main(): void {
   } catch (error) {
     filesOk = false;
     console.error(
-      `[writer] Diretoria de saída não escrevível (${config.outputDir}): ${error instanceof Error ? error.message : String(error)}`,
+      `[writer] Output directory is not writable (${config.outputDir}): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
@@ -204,18 +204,18 @@ function main(): void {
       `[server] Estado restaurado · v${session.state.version} · ${session.state.homeTeam} ${session.state.homeScore}-${session.state.awayScore} ${session.state.awayTeam}`,
     );
   } else {
-    console.log("[server] Sem controlo ativo. Abra http://localhost:8080 no computador anfitrião e configure as equipas.");
+    console.log("[server] No active match. Open http://localhost:8080 on the host computer to configure the teams.");
   }
 
   const server = app.start();
   const powerRequest = keepSystemAwake();
-  console.log("[power] Suspensão, hibernação e desligamento dos ecrãs desativados enquanto a app estiver ligada.");
+  console.log("[power] Sleep, hibernation, and display shutdown disabled while the app is running.");
 
   if (storeResult.restoredFromBackup) {
     console.warn(`[server] Estado restaurado a partir de backup. ${storeResult.startupError ?? ""}`);
   }
   if (!filesOk) {
-    console.error(`[server] A arrancar em modo degradado: ${writer.lastError ?? "saída OBS indisponível"}.`);
+    console.error(`[server] Starting in degraded mode: ${writer.lastError ?? "OBS output unavailable"}.`);
   }
   console.log(`[server] Matchday Control v${APP_VERSION} a correr em ${server.url.host} · Scoreboard: ${config.outputDir}`);
   logLanAddresses(server.port ?? config.port);
@@ -236,7 +236,7 @@ function main(): void {
     const lag = now - lastTick - WATCHDOG_INTERVAL_MS;
     lastTick = now;
     if (lag > WATCHDOG_MAX_LAG_MS) {
-      console.error(`[watchdog] Event loop bloqueado ${lag}ms; a sair para reinício automático.`);
+      console.error(`[watchdog] Event loop blocked for ${lag}ms; exiting for automatic restart.`);
       shutdown(1);
     }
   }, WATCHDOG_INTERVAL_MS);
@@ -254,7 +254,7 @@ function main(): void {
       powerRequest.release();
       store.close();
       releaseLock(lockPath);
-      console.log("[server] Matchday Control parado.");
+      console.log("[server] Matchday Control stopped.");
       process.exit(code);
     });
   }
@@ -263,11 +263,11 @@ function main(): void {
   process.on("SIGTERM", () => shutdown(0));
 
   process.on("uncaughtException", (error) => {
-    console.error(`[server] Erro fatal: ${error.stack ?? error}`);
+    console.error(`[server] Fatal error: ${error.stack ?? error}`);
     shutdown(1);
   });
   process.on("unhandledRejection", (reason) => {
-    console.error(`[server] Rejeição não tratada: ${String(reason)}`);
+    console.error(`[server] Unhandled rejection: ${String(reason)}`);
     shutdown(1);
   });
 }

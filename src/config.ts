@@ -36,9 +36,9 @@ export const DEFAULT_OBS_CONFIG: ObsConfig = {
   port: 4455,
   password: "",
   scenes: {
-    matchscore: "Marcador",
-    goal: "Alerta de golo",
-    sponsors: "Patrocinadores",
+    matchscore: "Match score",
+    goal: "Goal alert",
+    sponsors: "Sponsors",
   },
 };
 
@@ -176,7 +176,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
 
   if (options.setPin != null) {
     const pin = options.setPin.trim();
-    if (!isValidAccessPin(pin)) throw new Error("O PIN deve ter exatamente 6 algarismos.");
+    if (!isValidAccessPin(pin)) throw new Error("The PIN must contain exactly 6 digits.");
     const config = loadConfig({ configPath });
     const payload = JSON.parse(readFileSync(config.configPath, "utf8").replace(/^\uFEFF/, "")) as Record<string, unknown>;
     payload.accessPinHash = hashAccessPassword(pin);
@@ -186,7 +186,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     } catch {
       // O PIN inicial pode já ter sido removido.
     }
-    console.log("[config] PIN atualizado.");
+    console.log("[config] PIN updated.");
     process.exit(0);
   }
 
@@ -195,10 +195,10 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     try {
       raw = JSON.parse(readFileSync(configPath, "utf8").replace(/^\uFEFF/, ""));
     } catch (error) {
-      throw new Error(`Configuração inválida em ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Invalid configuration at ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      throw new Error(`Configuração inválida em ${configPath}: esperado um objeto JSON.`);
+      throw new Error(`Invalid configuration at ${configPath}: expected a JSON object.`);
     }
     const source = { ...(raw as Record<string, unknown>) };
     let changed = false;
@@ -223,10 +223,10 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     if (changed) writeConfigFile(configPath, source);
     const config = normalize(source, configPath);
     if (!/^[0-9a-f]{32,}$/i.test(config.tokenSecret)) {
-      throw new Error(`O tokenSecret em ${configPath} deve ter pelo menos 32 caracteres hexadecimais.`);
+      throw new Error(`tokenSecret in ${configPath} must contain at least 32 hexadecimal characters.`);
     }
     if (!verifyPinHashShape(config.accessPinHash)) {
-      throw new Error(`O accessPinHash em ${configPath} não é válido.`);
+      throw new Error(`accessPinHash in ${configPath} is invalid.`);
     }
     return config;
   }

@@ -88,6 +88,10 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
     const uiHtml = await ui.text();
     assert.match(uiHtml, /Matchday Control/);
     assert.match(uiHtml, /id="login-pin"/);
+    assert.match(uiHtml, /id="language-select"/);
+    assert.match(uiHtml, /English/);
+    assert.match(uiHtml, /Português \(Portugal\)/);
+    assert.match(uiHtml, /mc_language/);
     assert.match(uiHtml, /api\/stream/);
     assert.match(uiHtml, /id="dlg-period"/);
     assert.match(uiHtml, /id="clock-confirm"/);

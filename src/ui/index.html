@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -62,6 +62,29 @@
       padding: 16px 0 20px;
       margin-bottom: 14px;
       border-bottom: 1px solid var(--border);
+    }
+    .language-control {
+      position: absolute;
+      right: 0;
+      top: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--dim);
+      font-size: 11px;
+    }
+    .language-control select {
+      color: var(--text);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 5px 7px;
+      font: inherit;
+    }
+    .login-language {
+      position: static;
+      justify-content: center;
+      margin-bottom: 12px;
     }
     .brand { display: flex; align-items: center; justify-content: center; min-width: 0; width: 100%; }
     .brand__mark {
@@ -350,38 +373,38 @@
 
   <dialog id="dlg-clock">
     <form method="dialog" class="dialog-body" id="clock-form">
-      <h3>Corrigir relógio</h3>
-      <p class="desc">O relógio continua a correr se já estiver em contagem.</p>
-      <div class="field"><label for="clock-min">Minutos</label><input id="clock-min" type="number" min="0" max="720" required></div>
-      <div class="field"><label for="clock-sec">Segundos</label><input id="clock-sec" type="number" min="0" max="59" required></div>
+      <h3 data-i18n="clock.dialog.title">Correct clock</h3>
+      <p class="desc" data-i18n="clock.dialog.description">The clock keeps running if it is already active.</p>
+      <div class="field"><label for="clock-min" data-i18n="clock.minutes">Minutes</label><input id="clock-min" type="number" min="0" max="720" required></div>
+      <div class="field"><label for="clock-sec" data-i18n="clock.seconds">Seconds</label><input id="clock-sec" type="number" min="0" max="59" required></div>
     </form>
     <div class="dialog-actions">
-      <button class="btn" id="clock-cancel" type="button">Cancelar</button>
-      <button class="btn btn--primary" id="clock-confirm" type="button">Definir tempo</button>
+      <button class="btn" id="clock-cancel" type="button" data-i18n="common.cancel">Cancel</button>
+      <button class="btn btn--primary" id="clock-confirm" type="button" data-i18n="clock.set">Set time</button>
     </div>
   </dialog>
 
   <dialog id="dlg-reset">
     <div class="dialog-body">
-      <h3>Recomeçar jogo</h3>
-      <p class="desc">Esta ação repõe o marcador a zero e não pode ser anulada.</p>
+      <h3 data-i18n="reset.title">Reset match</h3>
+      <p class="desc" data-i18n="reset.description">This resets the scoreboard to zero and cannot be undone.</p>
       <p class="dialog-warning" id="reset-warning"></p>
     </div>
     <div class="dialog-actions">
-      <button class="btn" id="reset-cancel">Cancelar</button>
-      <button class="btn btn--danger" id="reset-confirm">Recomeçar</button>
+      <button class="btn" id="reset-cancel" data-i18n="common.cancel">Cancel</button>
+      <button class="btn btn--danger" id="reset-confirm" data-i18n="reset.confirm">Reset</button>
     </div>
   </dialog>
 
   <dialog id="dlg-period">
     <div class="dialog-body">
-      <h3>Alterar período</h3>
-      <p class="desc">Esta ação altera o período e reposiciona o relógio do jogo.</p>
+      <h3 data-i18n="period.changeTitle">Change period</h3>
+      <p class="desc" data-i18n="period.changeDescription">This changes the period and moves the match clock.</p>
       <p class="dialog-warning" id="period-warning"></p>
     </div>
     <div class="dialog-actions">
-      <button class="btn" id="period-cancel" type="button">Cancelar</button>
-      <button class="btn btn--primary" id="period-confirm" type="button">Confirmar</button>
+      <button class="btn" id="period-cancel" type="button" data-i18n="common.cancel">Cancel</button>
+      <button class="btn btn--primary" id="period-confirm" type="button" data-i18n="common.confirm">Confirm</button>
     </div>
   </dialog>
 
@@ -389,7 +412,170 @@
     const $ = (id) => document.getElementById(id);
     const app = $("app");
 
+    const LANGUAGE_KEY = "mc_language";
+    const TRANSLATIONS = {
+      en: {
+        "language.label": "Language",
+        "language.en": "English",
+        "language.ptPT": "Português (Portugal)",
+        "common.cancel": "Cancel",
+        "common.confirm": "Confirm",
+        "login.prompt": "Enter the PIN to control the scoreboard.",
+        "login.button": "Sign in",
+        "login.invalidPin": "Incorrect PIN.",
+        "empty.message": "No active match yet.",
+        "empty.setupInstruction": "On the host computer, open {url} and configure the teams.",
+        "setup.label": "Match setup",
+        "setup.home": "Home team",
+        "setup.away": "Away team",
+        "setup.start": "Start control",
+        "setup.started": "Control started.",
+        "teams.home": "Home",
+        "teams.away": "Away",
+        "teams.homeAria": "Home team name",
+        "teams.awayAria": "Away team name",
+        "teams.save": "Save names",
+        "clock.max": "max {time} · {period}",
+        "clock.start": "START",
+        "clock.pause": "PAUSE",
+        "clock.set": "Set time",
+        "clock.adjust": "Adjust",
+        "clock.second1": "1 second",
+        "clock.second5": "5 seconds",
+        "clock.second10": "10 seconds",
+        "clock.second30": "30 seconds",
+        "clock.dialog.title": "Correct clock",
+        "clock.dialog.description": "The clock keeps running if it is already active.",
+        "clock.minutes": "Minutes",
+        "clock.seconds": "Seconds",
+        "period.regular": "Regular time",
+        "period.overtime": "Extra time",
+        "period.preMatch": "PRE-MATCH",
+        "period.firstHalf": "1ST HALF",
+        "period.halfTime": "HALF-TIME",
+        "period.secondHalf": "2ND HALF",
+        "period.extraFirstHalf": "EXTRA TIME 1ST HALF",
+        "period.extraHalfTime": "EXTRA-TIME BREAK",
+        "period.extraSecondHalf": "EXTRA TIME 2ND HALF",
+        "period.fullTime": "FULL TIME",
+        "period.extraFullTime": "EXTRA TIME FULL TIME",
+        "period.enableOvertime": "Enable extra time",
+        "period.hideOvertime": "Hide extra time",
+        "period.overtimeActive": "Extra time active",
+        "period.changeTitle": "Change period",
+        "period.changeDescription": "This changes the period and moves the match clock.",
+        "period.confirmation": "Change to {period}? The match clock will be adjusted.",
+        "action.reset": "Reset match",
+        "reset.title": "Reset match",
+        "reset.description": "This resets the scoreboard to zero and cannot be undone.",
+        "reset.confirm": "Reset",
+        "reset.confirmation": "Reset the score and clock for {home} vs {away}?",
+        "obs.title": "OBS control",
+        "obs.scenes": "OBS scenes",
+        "obs.off": "OBS disabled.",
+        "obs.connected": "Connected · {scene}",
+        "obs.disconnected": "Disconnected",
+        "obs.readyScene": "scene ready",
+        "obs.scene.matchscore": "MATCH SCORE",
+        "obs.scene.goal": "GOAL",
+        "obs.scene.sponsors": "SPONSORS",
+        "obs.sceneChanged": "OBS scene changed to {scene}.",
+        "score.remove": "Remove {side} goal",
+        "score.mark": "Score for {side}",
+        "side.home": "home",
+        "side.away": "away",
+        "notice.offline": "Server connection lost — reconnecting…",
+        "notice.resynced": "The match changed on another device; pending commands were cancelled.",
+        "notice.loggedOut": "Signed out.",
+        "notice.loggedIn": "Signed in.",
+        "validation.teams": "Enter both team names.",
+        "validation.clock": "Enter a valid time.",
+        "api.expired": "Session expired. Sign in again with the PIN.",
+        "api.generic": "The operation could not be completed."
+      },
+      "pt-PT": {
+        "language.label": "Idioma",
+        "language.en": "English",
+        "language.ptPT": "Português (Portugal)",
+        "common.cancel": "Cancelar",
+        "common.confirm": "Confirmar",
+        "login.prompt": "Introduz o PIN para controlar o marcador.",
+        "login.button": "Entrar",
+        "login.invalidPin": "PIN incorreto.",
+        "empty.message": "Ainda não há um jogo ativo.",
+        "empty.setupInstruction": "No computador anfitrião, abre {url} e configura as equipas.",
+        "setup.label": "Configuração do jogo",
+        "setup.home": "Equipa da casa",
+        "setup.away": "Equipa visitante",
+        "setup.start": "Começar controlo",
+        "setup.started": "Controlo iniciado.",
+        "teams.home": "Casa",
+        "teams.away": "Visitante",
+        "teams.homeAria": "Nome da equipa da casa",
+        "teams.awayAria": "Nome da equipa visitante",
+        "teams.save": "Guardar nomes",
+        "clock.max": "máx {time} · {period}",
+        "clock.start": "INICIAR",
+        "clock.pause": "PAUSAR",
+        "clock.set": "Definir tempo",
+        "clock.adjust": "Ajuste",
+        "clock.second1": "1 segundo",
+        "clock.second5": "5 segundos",
+        "clock.second10": "10 segundos",
+        "clock.second30": "30 segundos",
+        "clock.dialog.title": "Corrigir relógio",
+        "clock.dialog.description": "O relógio continua a correr se já estiver em contagem.",
+        "clock.minutes": "Minutos",
+        "clock.seconds": "Segundos",
+        "period.regular": "Tempo regular",
+        "period.overtime": "Prolongamento",
+        "period.preMatch": "PRÉ-JOGO",
+        "period.firstHalf": "1.º TEMPO",
+        "period.halfTime": "INTERVALO",
+        "period.secondHalf": "2.º TEMPO",
+        "period.extraFirstHalf": "1.ª PR. PROL.",
+        "period.extraHalfTime": "INT. PROL.",
+        "period.extraSecondHalf": "2.ª PR. PROL.",
+        "period.fullTime": "FIM 2.ª PARTE",
+        "period.extraFullTime": "FIM PROL.",
+        "period.enableOvertime": "Ativar prolongamento",
+        "period.hideOvertime": "Ocultar prolongamento",
+        "period.overtimeActive": "Prolongamento ativo",
+        "period.changeTitle": "Alterar período",
+        "period.changeDescription": "Esta ação altera o período e reposiciona o relógio do jogo.",
+        "period.confirmation": "Confirmas a mudança para {period}? O relógio será ajustado.",
+        "action.reset": "Recomeçar jogo",
+        "reset.title": "Recomeçar jogo",
+        "reset.description": "Esta ação repõe o marcador a zero e não pode ser anulada.",
+        "reset.confirm": "Recomeçar",
+        "reset.confirmation": "Confirmas que queres repor o resultado e o relógio de {home} vs {away}?",
+        "obs.title": "Controlo OBS",
+        "obs.scenes": "Cenas OBS",
+        "obs.off": "OBS desligado.",
+        "obs.connected": "Ligado · {scene}",
+        "obs.disconnected": "Desligado",
+        "obs.readyScene": "cena pronta",
+        "obs.scene.matchscore": "MARCADOR",
+        "obs.scene.goal": "GOLO",
+        "obs.scene.sponsors": "PATROCÍNIOS",
+        "obs.sceneChanged": "Cena OBS alterada para {scene}.",
+        "score.remove": "Remover golo {side}",
+        "score.mark": "Marcar golo {side}",
+        "side.home": "da casa",
+        "side.away": "visitante",
+        "notice.offline": "Sem ligação ao servidor — a tentar religar…",
+        "notice.resynced": "O jogo mudou noutro dispositivo; os comandos pendentes foram cancelados.",
+        "notice.loggedOut": "Sessão terminada.",
+        "notice.loggedIn": "Sessão iniciada.",
+        "validation.teams": "Indica as duas equipas.",
+        "validation.clock": "Indica um tempo válido.",
+        "api.expired": "Sessão expirada. Entra de novo com o PIN.",
+        "api.generic": "A operação não foi concluída."
+      }
+    };
+
     const ui = {
+      language: localStorage.getItem(LANGUAGE_KEY) === "pt-PT" ? "pt-PT" : "en",
       token: localStorage.getItem("mc_token") || null,
       snapshot: null,
       setupAllowed: false,
@@ -423,26 +609,65 @@
       EXTRA_FULL_TIME: 120 * 60,
     };
     const PLAYING = new Set(["FIRST_HALF", "SECOND_HALF", "EXTRA_FIRST_HALF", "EXTRA_SECOND_HALF"]);
-    const PERIOD_LABELS = {
-      PRE_MATCH: "PRÉ-JOGO",
-      FIRST_HALF: "1.º TEMPO",
-      HALF_TIME: "INTERVALO",
-      SECOND_HALF: "2.º TEMPO",
-      EXTRA_FIRST_HALF: "1.ª PR. PROL.",
-      EXTRA_HALF_TIME: "INT. PROL.",
-      EXTRA_SECOND_HALF: "2.ª PR. PROL.",
-      FULL_TIME: "FIM 2.ª PARTE",
-      EXTRA_FULL_TIME: "FIM PROL.",
+    const PERIOD_LABEL_KEYS = {
+      PRE_MATCH: "period.preMatch",
+      FIRST_HALF: "period.firstHalf",
+      HALF_TIME: "period.halfTime",
+      SECOND_HALF: "period.secondHalf",
+      EXTRA_FIRST_HALF: "period.extraFirstHalf",
+      EXTRA_HALF_TIME: "period.extraHalfTime",
+      EXTRA_SECOND_HALF: "period.extraSecondHalf",
+      FULL_TIME: "period.fullTime",
+      EXTRA_FULL_TIME: "period.extraFullTime",
     };
     const REGULAR_PERIODS = ["FIRST_HALF", "HALF_TIME", "SECOND_HALF", "FULL_TIME"];
     const EXTRA_PERIODS = ["EXTRA_FIRST_HALF", "EXTRA_HALF_TIME", "EXTRA_SECOND_HALF", "EXTRA_FULL_TIME"];
     const OBS_SCENES = [
-      { key: "matchscore", label: "MATCHSCORE" },
-      { key: "goal", label: "GOLO" },
-      { key: "sponsors", label: "SPONSORS" },
+      { key: "matchscore", labelKey: "obs.scene.matchscore" },
+      { key: "goal", labelKey: "obs.scene.goal" },
+      { key: "sponsors", labelKey: "obs.scene.sponsors" },
     ];
 
     /* ---------- helpers ---------- */
+    function t(key, values = {}) {
+      const language = TRANSLATIONS[ui.language] || TRANSLATIONS.en;
+      const template = language[key] || TRANSLATIONS.en[key] || key;
+      return template.replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? `{${name}}`));
+    }
+
+    function periodLabel(period) {
+      return t(PERIOD_LABEL_KEYS[period] || period);
+    }
+
+    function languageSelectorHtml() {
+      return `
+        <label for="language-select">${t("language.label")}</label>
+        <select id="language-select" aria-label="${t("language.label")}">
+          <option value="en" ${ui.language === "en" ? "selected" : ""}>${t("language.en")}</option>
+          <option value="pt-PT" ${ui.language === "pt-PT" ? "selected" : ""}>${t("language.ptPT")}</option>
+        </select>`;
+    }
+
+    function applyStaticTranslations() {
+      document.documentElement.lang = ui.language === "pt-PT" ? "pt-PT" : "en";
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        element.textContent = t(element.dataset.i18n);
+      });
+    }
+
+    function setLanguage(language) {
+      if (language !== "en" && language !== "pt-PT") return;
+      ui.language = language;
+      localStorage.setItem(LANGUAGE_KEY, language);
+      lastRenderKey = null;
+      applyStaticTranslations();
+      render();
+    }
+
+    document.addEventListener("change", (event) => {
+      if (event.target?.id === "language-select") setLanguage(event.target.value);
+    });
+
     function esc(value) {
       return String(value ?? "")
         .replaceAll("&", "&amp;")
@@ -475,14 +700,16 @@
       const response = await fetch(path, { ...options, headers });
       if (response.status === 401) {
         logout(true);
-        throw new Error("Sessão expirada. Entra de novo com o PIN.");
+        const error = new Error(t("api.expired"));
+        error.code = "SESSION_EXPIRED";
+        throw error;
       }
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (response.status === 409 && payload.snapshot) {
           return { snapshot: payload.snapshot, resynced: true };
         }
-        throw new Error(payload.error || "A operação não foi concluída.");
+        throw new Error(payload.error || t("api.generic"));
       }
       return payload;
     }
@@ -495,7 +722,7 @@
         ui.setupAllowed = Boolean(payload.setupAllowed);
         render();
       } catch (error) {
-        if (error.message.startsWith("Sessão")) return;
+        if (error.code === "SESSION_EXPIRED") return;
         setNotice("error", error.message);
         render();
       }
@@ -542,7 +769,7 @@
             if (result.resynced) {
               acceptSnapshot(result.snapshot);
               ui.pendingActions.length = 0;
-              setNotice("info", "O estado mudou noutro dispositivo; os comandos pendentes foram cancelados.");
+              setNotice("info", t("notice.resynced"));
               break;
             }
             acceptSnapshot({ state: result.state });
@@ -550,7 +777,7 @@
             if (action?.type === "RESET") ui.overtimeEnabled = false;
           } catch (error) {
             ui.pendingActions.length = 0;
-            if (error.message.startsWith("Sessão")) return;
+            if (error.code === "SESSION_EXPIRED") return;
             setNotice("error", error.message);
             break;
           }
@@ -582,7 +809,7 @@
       localStorage.removeItem("mc_token");
       if (ui.source) { ui.source.close(); ui.source = null; }
       if (ui.offlineTimer) { clearTimeout(ui.offlineTimer); ui.offlineTimer = null; }
-      if (!quiet) setNotice("info", "Sessão terminada.");
+      if (!quiet) setNotice("info", t("notice.loggedOut"));
       render();
     }
 
@@ -632,10 +859,10 @@
           body: JSON.stringify({ pin }),
         });
         const body = await payload.json().catch(() => ({}));
-        if (!payload.ok) throw new Error(body.error || "Palavra-passe incorreta.");
+        if (!payload.ok) throw new Error(body.error || t("login.invalidPin"));
         ui.token = body.token;
         localStorage.setItem("mc_token", ui.token);
-        setNotice("success", "Sessão iniciada.");
+        setNotice("success", t("notice.loggedIn"));
         await refresh();
         connectStream();
       } catch (error) {
@@ -650,6 +877,7 @@
     function renderKey() {
       const state = ui.snapshot?.state ?? null;
       return JSON.stringify([
+        ui.language,
         !!ui.token,
         state && [
           state.homeTeam,
@@ -681,14 +909,15 @@
       if (!ui.token) {
         app.innerHTML = `
           <div class="login">
+            <div class="language-control login-language">${languageSelectorHtml()}</div>
             <div class="card">
               <div class="brand__mark">MC</div>
               <h2>Matchday Control</h2>
-               <p>Introduz o PIN para controlar o marcador.</p>
+               <p>${t("login.prompt")}</p>
                ${notificationHtml()}
                <input id="login-pin" class="pin-input" type="password" inputmode="numeric" autocomplete="off"
                       placeholder="••••••" maxlength="6" autofocus>
-              <button id="login-btn" class="btn btn--primary btn--block btn--lg" style="margin-top:16px">Entrar</button>
+              <button id="login-btn" class="btn btn--primary btn--block btn--lg" style="margin-top:16px">${t("login.button")}</button>
             </div>
           </div>`;
         const input = $("login-pin");
@@ -705,8 +934,8 @@
           ${headerHtml()}
           ${notificationHtml()}
           <div class="empty">
-            Ainda não há um controlo ativo.<br>
-            No computador anfitrião, abre <strong>http://localhost:${location.port || 8080}</strong> e configura as equipas.
+            ${t("empty.message")}<br>
+            ${t("empty.setupInstruction", { url: `<strong>http://localhost:${location.port || 8080}</strong>` })}
           </div>
           ${obsCardHtml()}`;
         bindObsControls();
@@ -718,10 +947,10 @@
           ${headerHtml()}
           ${notificationHtml()}
           <div class="card setup">
-            <p class="section-label">Configuração do jogo</p>
-            <div class="field"><label for="setup-home">Equipa da casa</label><input id="setup-home" maxlength="48"></div>
-            <div class="field"><label for="setup-away">Equipa visitante</label><input id="setup-away" maxlength="48"></div>
-            <button id="setup-start" class="btn btn--primary btn--block btn--lg">Começar controlo</button>
+            <p class="section-label">${t("setup.label")}</p>
+            <div class="field"><label for="setup-home">${t("setup.home")}</label><input id="setup-home" maxlength="48"></div>
+            <div class="field"><label for="setup-away">${t("setup.away")}</label><input id="setup-away" maxlength="48"></div>
+            <button id="setup-start" class="btn btn--primary btn--block btn--lg">${t("setup.start")}</button>
           </div>
           ${obsCardHtml()}`;
         $("setup-start").addEventListener("click", startSetup);
@@ -738,8 +967,8 @@
       const overtimeActive = EXTRA_PERIODS.includes(state.period);
       const overtimeVisible = ui.overtimeEnabled || overtimeActive;
       const overtimeToggleLabel = overtimeVisible
-        ? (overtimeActive ? "Prolongamento ativo" : "Ocultar prolongamento")
-        : "Ativar prolongamento";
+        ? (overtimeActive ? t("period.overtimeActive") : t("period.hideOvertime"))
+        : t("period.enableOvertime");
       app.innerHTML = `
         ${headerHtml()}
         ${notificationHtml()}
@@ -748,12 +977,12 @@
         <section class="card teams-card">
           <form class="teams" id="teams-inline-form">
             <label class="team team-editor" for="team-home-input">
-              <small>Casa</small><input id="team-home-input" value="${esc(teamDraft.home)}" maxlength="48" autocomplete="off" aria-label="Nome da equipa da casa">
+              <small>${t("teams.home")}</small><input id="team-home-input" value="${esc(teamDraft.home)}" maxlength="48" autocomplete="off" aria-label="${t("teams.homeAria")}">
             </label>
             <label class="team team-editor" for="team-away-input">
-              <small>Visitante</small><input id="team-away-input" value="${esc(teamDraft.away)}" maxlength="48" autocomplete="off" aria-label="Nome da equipa visitante">
+              <small>${t("teams.away")}</small><input id="team-away-input" value="${esc(teamDraft.away)}" maxlength="48" autocomplete="off" aria-label="${t("teams.awayAria")}">
             </label>
-            <button class="btn btn--primary teams-save" id="teams-save" type="submit" ${ui.busy ? "disabled" : ""}>Guardar nomes</button>
+            <button class="btn btn--primary teams-save" id="teams-save" type="submit" ${ui.busy ? "disabled" : ""}>${t("teams.save")}</button>
           </form>
         </section>
 
@@ -767,18 +996,18 @@
             <div>
               <span class="clock__value" id="clock-value">${clock}</span>
             </div>
-            <small class="clock__limit">máx ${formatClock(periodMax)} · ${PERIOD_LABELS[state.period]}</small>
+            <small class="clock__limit">${t("clock.max", { time: formatClock(periodMax), period: periodLabel(state.period) })}</small>
             <div class="clock__controls">
-              <button class="btn ${running ? "btn--danger" : "btn--primary"}" id="clock-toggle" ${toggleDisabled ? "disabled" : ""}>${running ? "PAUSAR" : "INICIAR"}</button>
-              <button class="btn" id="clock-set">Definir tempo</button>
+              <button class="btn ${running ? "btn--danger" : "btn--primary"}" id="clock-toggle" ${toggleDisabled ? "disabled" : ""}>${running ? t("clock.pause") : t("clock.start")}</button>
+              <button class="btn" id="clock-set">${t("clock.set")}</button>
             </div>
-            <div class="clock__adjust" aria-label="Ajustar relógio">
-              <label for="clock-step">Ajuste</label>
+            <div class="clock__adjust" aria-label="${t("clock.adjust")}">
+              <label for="clock-step">${t("clock.adjust")}</label>
               <select id="clock-step" ${periodMax === 0 ? "disabled" : ""}>
-                <option value="1" ${ui.clockStep === 1 ? "selected" : ""}>1 segundo</option>
-                <option value="5" ${ui.clockStep === 5 ? "selected" : ""}>5 segundos</option>
-                <option value="10" ${ui.clockStep === 10 ? "selected" : ""}>10 segundos</option>
-                <option value="30" ${ui.clockStep === 30 ? "selected" : ""}>30 segundos</option>
+                <option value="1" ${ui.clockStep === 1 ? "selected" : ""}>${t("clock.second1")}</option>
+                <option value="5" ${ui.clockStep === 5 ? "selected" : ""}>${t("clock.second5")}</option>
+                <option value="10" ${ui.clockStep === 10 ? "selected" : ""}>${t("clock.second10")}</option>
+                <option value="30" ${ui.clockStep === 30 ? "selected" : ""}>${t("clock.second30")}</option>
               </select>
               <button class="btn" id="clock-minus-step" type="button" ${periodMax === 0 ? "disabled" : ""}>−</button>
               <button class="btn" id="clock-plus-step" type="button" ${periodMax === 0 ? "disabled" : ""}>+</button>
@@ -786,15 +1015,15 @@
           </section>
 
         <section class="card periods-card">
-          <div class="period-groups ${overtimeVisible ? "has-overtime" : "regular-only"}" role="group" aria-label="Período do jogo">
+          <div class="period-groups ${overtimeVisible ? "has-overtime" : "regular-only"}" role="group" aria-label="${t("period.changeTitle")}">
             <div class="period-group">
-              <h4 class="period-group__title">Tempo regular</h4>
+              <h4 class="period-group__title">${t("period.regular")}</h4>
               <div class="periods">
                 ${REGULAR_PERIODS.map((period) => periodButtonHtml(period, state)).join("")}
               </div>
             </div>
             ${overtimeVisible ? `<div class="period-group">
-              <h4 class="period-group__title">Prolongamento</h4>
+              <h4 class="period-group__title">${t("period.overtime")}</h4>
               <div class="periods">
                 ${EXTRA_PERIODS.map((period) => periodButtonHtml(period, state)).join("")}
               </div>
@@ -804,7 +1033,7 @@
 
         <section class="card actions-card">
           <button class="btn ${overtimeVisible ? "btn--primary" : ""}" id="toggle-overtime" type="button" ${overtimeActive ? "disabled" : ""}>${overtimeToggleLabel}</button>
-          <button class="btn btn--danger" id="reset">Recomeçar jogo</button>
+          <button class="btn btn--danger" id="reset">${t("action.reset")}</button>
         </section>
 
         ${obsCardHtml()}
@@ -842,6 +1071,7 @@
           <div class="brand">
             <h1>MATCHDAY CONTROL</h1>
           </div>
+          <div class="language-control">${languageSelectorHtml()}</div>
         </header>`;
     }
 
@@ -849,7 +1079,7 @@
       const messages = [];
       if (ui.notice) messages.push(ui.notice);
       if (ui.connection === "offline") {
-        messages.push({ tone: "info", text: "Sem ligação ao servidor — a tentar religar…" });
+        messages.push({ tone: "info", text: t("notice.offline") });
       }
       if (messages.length === 0) return "";
       return `<div class="notice-stack" aria-live="polite">${messages
@@ -858,33 +1088,33 @@
     }
 
     function periodButtonHtml(period, state) {
-      return `<button data-period="${period}" class="${state.period === period ? "is-active" : ""}">${PERIOD_LABELS[period]}</button>`;
+      return `<button data-period="${period}" class="${state.period === period ? "is-active" : ""}">${periodLabel(period)}</button>`;
     }
 
     function scoreSideHtml(side, score) {
-      const label = side === "home" ? "casa" : "visitante";
+      const label = t(side === "home" ? "side.home" : "side.away");
       return `<div class="score__side">
         <strong class="score__num">${score}</strong>
         <div class="score__controls">
-          <button id="${side}-minus" aria-label="Remover golo ${label}" ${score === 0 ? "disabled" : ""}>−</button>
-          <button id="${side}-plus" aria-label="Marcar golo ${label}">+</button>
+          <button id="${side}-minus" aria-label="${t("score.remove", { side: label })}" ${score === 0 ? "disabled" : ""}>−</button>
+          <button id="${side}-plus" aria-label="${t("score.mark", { side: label })}">+</button>
         </div>
       </div>`;
     }
 
     function obsStatusHtml() {
-      if (!ui.obs || !ui.obs.enabled) return `<p class="obs-status">OBS desligado.</p>`;
-      if (ui.obs.connected) return `<p class="obs-status is-connected">Ligado · ${esc(ui.obs.currentSceneName || "cena pronta")}</p>`;
-      return `<p class="obs-status is-error">Desligado${ui.obs.lastError ? ` · ${esc(ui.obs.lastError)}` : ""}</p>`;
+      if (!ui.obs || !ui.obs.enabled) return `<p class="obs-status">${t("obs.off")}</p>`;
+      if (ui.obs.connected) return `<p class="obs-status is-connected">${t("obs.connected", { scene: esc(ui.obs.currentSceneName || t("obs.readyScene")) })}</p>`;
+      return `<p class="obs-status is-error">${t("obs.disconnected")}${ui.obs.lastError ? ` · ${esc(ui.obs.lastError)}` : ""}</p>`;
     }
 
     function obsCardHtml() {
       return `
         <section class="card obs-card">
-          <div class="section-label">Controlo OBS</div>
+          <div class="section-label">${t("obs.title")}</div>
           ${obsStatusHtml()}
-          <div class="obs-actions" role="group" aria-label="Cenas OBS">
-            ${OBS_SCENES.map(({ key, label }) => obsButtonHtml(key, label)).join("")}
+          <div class="obs-actions" role="group" aria-label="${t("obs.scenes")}">
+            ${OBS_SCENES.map(({ key, labelKey }) => obsButtonHtml(key, t(labelKey))).join("")}
           </div>
         </section>`;
     }
@@ -905,7 +1135,7 @@
           body: JSON.stringify({ sceneKey }),
         });
         ui.obs = payload.obs ?? ui.obs;
-        setNotice("success", `Cena OBS alterada para ${payload.sceneName}.`);
+        setNotice("success", t("obs.sceneChanged", { scene: payload.sceneName }));
       } catch (error) {
         setNotice("error", error.message);
         await refreshHealth();
@@ -920,7 +1150,7 @@
       const home = $("team-home-input").value.trim();
       const away = $("team-away-input").value.trim();
       if (!home || !away) {
-        setNotice("error", "Indica as duas equipas.");
+        setNotice("error", t("validation.teams"));
         render();
         return;
       }
@@ -957,7 +1187,7 @@
       const minutes = Number($("clock-min").value);
       const seconds = Number($("clock-sec").value);
       if (!Number.isInteger(minutes) || minutes < 0 || !Number.isInteger(seconds) || seconds < 0 || seconds > 59) {
-        setNotice("error", "Indica um tempo válido.");
+        setNotice("error", t("validation.clock"));
         render();
         return;
       }
@@ -982,10 +1212,10 @@
 
     function requestPeriod(period) {
       const state = ui.snapshot?.state;
-      if (!state || ui.busy || !PERIOD_LABELS[period] || period === state.period) return;
+      if (!state || ui.busy || !PERIOD_LABEL_KEYS[period] || period === state.period) return;
       ui.pendingPeriod = period;
       $("period-warning").textContent =
-        `Confirmas a mudança para ${PERIOD_LABELS[period]}? O relógio será ajustado para este período.`;
+        t("period.confirmation", { period: periodLabel(period) });
       $("dlg-period").showModal();
     }
 
@@ -1004,7 +1234,7 @@
     function openReset() {
       const state = ui.snapshot.state;
       $("reset-warning").textContent =
-        `Confirmas que queres repor o resultado e o relógio de ${state.homeTeam} vs ${state.awayTeam}?`;
+        t("reset.confirmation", { home: state.homeTeam, away: state.awayTeam });
       $("dlg-reset").showModal();
     }
 
@@ -1019,7 +1249,7 @@
       const home = $("setup-home").value.trim();
       const away = $("setup-away").value.trim();
       if (!home || !away) {
-        setNotice("error", "Indica as duas equipas.");
+        setNotice("error", t("validation.teams"));
         render();
         return;
       }
@@ -1030,9 +1260,9 @@
           body: JSON.stringify({ homeTeam: home, awayTeam: away }),
         });
         ui.snapshot = { state: payload.state };
-        setNotice("success", "Controlo iniciado.");
+        setNotice("success", t("setup.started"));
       } catch (error) {
-        if (!error.message.startsWith("Sessão")) setNotice("error", error.message);
+        if (error.code !== "SESSION_EXPIRED") setNotice("error", error.message);
       } finally {
         ui.busy = false;
         render();
@@ -1081,6 +1311,7 @@
       render();
     });
 
+    applyStaticTranslations();
     if (ui.token) {
       void refresh().then(() => {
         connectStream();

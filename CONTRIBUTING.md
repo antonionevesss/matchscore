@@ -1,23 +1,23 @@
-# Contribuir
+# Contributing
 
-Obrigado por contribuir para o Matchday Control.
+Thanks for contributing to Matchday Control.
 
-## Antes de abrir um pull request
+## Before opening a pull request
 
-1. Explica o problema ou a alteração pretendida.
-2. Mantém o comportamento agnóstico a clubes e instalações.
-3. Atualiza a documentação quando mudares configuração, API ou operação.
-4. Executa `bun run typecheck` e `bun test`.
+1. Explain the problem or intended change.
+2. Keep the behaviour club- and installation-agnostic.
+3. Update the documentation when configuration, API, or operation changes.
+4. Run `bun run typecheck` and `bun test`.
 
-## Convenções
+## Conventions
 
-- Usa TypeScript estrito e mantém as responsabilidades separadas por módulo.
-- Não comitas `data/`, `scoreboard/`, executáveis, bases de dados ou credenciais.
-- Não introduzas tokens, PINs, palavras-passe ou dados de uma instalação real.
-- Para alterações do painel, testa em telemóvel e num ecrã largo quando possível.
+- Use strict TypeScript and keep responsibilities separated by module.
+- Do not commit `data/`, `scoreboard/`, executables, databases, or credentials.
+- Do not add tokens, PINs, passwords, or data from a real installation.
+- For panel changes, test on a phone and a wide screen when possible.
 
 ## Pull requests
 
-Descreve o que mudou, como foi validado e qualquer impacto de compatibilidade.
-Alterações que afetam o formato dos cinco ficheiros de saída devem explicar
-como os consumidores existentes podem migrar.
+Describe what changed, how it was validated, and any compatibility impact.
+Changes that affect the five output files must explain how existing consumers can
+migrate.

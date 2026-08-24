@@ -1,21 +1,20 @@
-# Segurança
+# Security
 
-## Reportar vulnerabilidades
+## Reporting vulnerabilities
 
-Não publiques detalhes de uma vulnerabilidade num issue público. Contacta os
-maintainers através do canal privado configurado no repositório e inclui:
+Do not publish vulnerability details in a public issue. Contact the maintainers
+through the private channel configured for the repository and include:
 
-- versão afetada;
-- passos para reproduzir;
-- impacto observado;
-- uma correção ou mitigação, se existir.
+- affected version;
+- reproduction steps;
+- observed impact;
+- a fix or mitigation, if available.
 
-## Modelo de operação
+## Operating model
 
-O Matchday Control foi desenhado para uma rede local confiável. Não deve ser
-exposto diretamente à Internet sem uma camada adicional de rede e controlo de
-acesso.
+Matchday Control is designed for a trusted local network. Do not expose it
+directly to the Internet without an additional network and access-control layer.
 
-Cada instalação cria o seu próprio PIN e segredo de sessão. Protege a pasta
-data/, sobretudo quando a integração OBS está configurada, porque contém a
-palavra-passe do WebSocket.
+Each installation creates its own PIN and session secret. Protect the `data/`
+folder, especially when OBS integration is enabled, because it contains the OBS
+WebSocket password.
