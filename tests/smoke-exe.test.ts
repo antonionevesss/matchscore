@@ -187,3 +187,27 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("exe regista erros de arranque num log persistente", { timeout: 20_000 }, async (t) => {
+  if (!existsSync(EXE)) {
+    t.skip("dist/MatchdayControl.exe não existe — corre bun run build primeiro.");
+    return;
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), "mc-startup-error-"));
+  const configPath = join(dir, "config.json");
+  writeFileSync(configPath, "{ configuração inválida", "utf8");
+
+  try {
+    const child = Bun.spawn([EXE, "--config", configPath], { stdout: "pipe", stderr: "pipe" });
+    const exitCode = await child.exited;
+    assert.notEqual(exitCode, 0);
+    const logPath = join(dir, "matchday.log");
+    assert.equal(existsSync(logPath), true, "deve criar o log ao lado da configuração indicada");
+    const log = readFileSync(logPath, "utf8");
+    assert.match(log, /Startup failure/);
+    assert.match(log, /Invalid configuration/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

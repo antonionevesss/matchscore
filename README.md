@@ -97,7 +97,31 @@ the initial PIN file is removed after a new PIN is set.
 To start automatically, copy the executable and both `.cmd` scripts to a
 writable folder such as `C:/Scoreboard/MatchdayControl`, then run
 `install-service.cmd` as Administrator. Run `uninstall-service.cmd` to remove
-the scheduled task. The `.exe` can also be run directly.
+the scheduled task. The task starts the executable in the background, so do not
+open a second copy of the `.exe` while the task is running; use the panel at
+`http://localhost:8080` instead. The `.exe` can also be run directly.
+
+### Startup diagnostics
+
+The executable writes all console output, warnings, and fatal startup errors to
+`data/matchday.log`. The log is created before configuration and SQLite are
+opened, so it is also available when the window opens and closes immediately.
+If `--config PATH` is used, the log is written beside that configuration. A
+different location can be selected with `--log PATH`.
+
+Useful checks on Windows:
+
+```bat
+type data\matchday.log
+schtasks /query /tn MatchdayControl /v /fo list
+netstat -ano | findstr :8080
+```
+
+To see the error without the console disappearing, open PowerShell in the
+installation folder and run `MatchdayControl.exe`. Common startup causes are a
+second instance already running (often the scheduled task), port 8080 already
+being in use, missing write permission for `data`/`scoreboard`, or an invalid
+`data\config.json`.
 
 ## Configuration
 

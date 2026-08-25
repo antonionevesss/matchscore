@@ -22,6 +22,8 @@ if errorlevel 1 (
   exit /b 1
 )
 echo [ok] Matchday Control installed and running.
+echo [info] The app is now running in the background; open http://localhost:8080 instead of starting a second .exe.
+echo [info] Diagnostics log: %DIR%data\matchday.log
 echo Check status:  schtasks /query /tn MatchdayControl /v /fo list
 echo Remove:        uninstall-service.cmd
 endlocal

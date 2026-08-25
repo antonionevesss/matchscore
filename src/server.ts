@@ -6,6 +6,7 @@ import { MatchdayStore } from "./store";
 import { TxtWriter } from "./writer";
 import { MatchdayServer, APP_VERSION } from "./api";
 import { keepSystemAwake } from "./power";
+import { configureDiagnostics, diagnosticError } from "./diagnostics";
 
 const WATCHDOG_INTERVAL_MS = 5_000;
 const WATCHDOG_MAX_LAG_MS = 10_000;
@@ -20,12 +21,33 @@ function hasArg(name: string): boolean {
   return process.argv.includes(name);
 }
 
+let fatalShutdown: ((code: number) => void) | null = null;
+const startupLogPath = configureDiagnostics({
+  configPath: argValue("--config"),
+  logPath: argValue("--log"),
+});
+
+function reportFatal(kind: string, reason: unknown): void {
+  console.error(`[fatal] ${kind}: ${diagnosticError(reason)}`);
+  if (fatalShutdown) {
+    fatalShutdown(1);
+  } else {
+    process.exit(1);
+  }
+}
+
+// Registados antes de loadConfig/SQLite/Bun.serve: um erro de arranque deixa
+// sempre uma explicação no log, mesmo quando o exe foi aberto por duplo clique.
+process.on("uncaughtException", (error) => reportFatal("Uncaught exception", error));
+process.on("unhandledRejection", (reason) => reportFatal("Unhandled rejection", reason));
+
 function printHelp(): void {
   console.log(`Matchday Control v${APP_VERSION}
 
 Usage:
   MatchdayControl.exe                   Start the server (creates config.json on first run)
   MatchdayControl.exe --config PATH     Use another configuration
+  MatchdayControl.exe --log PATH        Write diagnostics to another log file
   MatchdayControl.exe --set-pin 123456  Set or update the operational PIN
   MatchdayControl.exe --print-pin       Show the initial PIN, if it still exists
   MatchdayControl.exe --help            Show this help
@@ -154,6 +176,8 @@ function openBrowser(url: string): void {
 }
 
 function main(): void {
+  console.log(`[diagnostics] Log file: ${startupLogPath}`);
+
   if (hasArg("--help") || hasArg("-h")) {
     printHelp();
     process.exit(0);
@@ -177,7 +201,9 @@ function main(): void {
 
   const lockPath = join(dataDir, "matchday.lock");
   if (!acquireLock(lockPath)) {
-    console.error("[server] Another Matchday Control instance is already running.");
+    console.error(
+      `[server] Another Matchday Control instance is already running. The Windows service may already be active. Check the panel at http://localhost:${config.port} or stop the scheduled task before opening another instance.`,
+    );
     process.exit(1);
   }
 
@@ -259,17 +285,13 @@ function main(): void {
     });
   }
 
+  fatalShutdown = shutdown;
   process.on("SIGINT", () => shutdown(0));
   process.on("SIGTERM", () => shutdown(0));
-
-  process.on("uncaughtException", (error) => {
-    console.error(`[server] Fatal error: ${error.stack ?? error}`);
-    shutdown(1);
-  });
-  process.on("unhandledRejection", (reason) => {
-    console.error(`[server] Unhandled rejection: ${String(reason)}`);
-    shutdown(1);
-  });
 }
 
-main();
+try {
+  main();
+} catch (error) {
+  reportFatal("Startup failure", error);
+}
