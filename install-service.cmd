@@ -22,8 +22,10 @@ if errorlevel 1 (
   exit /b 1
 )
 echo [ok] Matchday Control installed and running.
-echo [info] The app is now running in the background; open http://localhost:8080 instead of starting a second .exe.
 echo [info] Diagnostics log: %DIR%data\matchday.log
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue'; $port=8080; $config=Join-Path '%DIR%' 'data\config.json'; if(Test-Path -LiteralPath $config){try{$json=Get-Content -Raw -LiteralPath $config | ConvertFrom-Json; $configuredPort=$json.port -as [int]; if($configuredPort -gt 0 -and $configuredPort -lt 65536){$port=$configuredPort}}catch{}}; $url='http://localhost:' + $port; for($i=0;$i -lt 30;$i++){try{$response=Invoke-WebRequest -UseBasicParsing -Uri ($url + '/api/health') -TimeoutSec 1; if($response.StatusCode -eq 200){Start-Process $url; exit 0}}catch{}; Start-Sleep -Milliseconds 250}; Write-Host ('[warn] Control panel did not respond yet. Open ' + $url + ' manually.'); exit 1"
+if errorlevel 1 echo [warn] The service is running, but the browser could not be opened automatically.
+echo [info] The app runs in the background; use the browser panel instead of starting a second .exe.
 echo Check status:  schtasks /query /tn MatchdayControl /v /fo list
 echo Remove:        uninstall-service.cmd
 endlocal

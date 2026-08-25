@@ -1,0 +1,105 @@
+name: Release Windows package
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish Windows release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.x
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify tag matches package version
+        shell: pwsh
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          $packageVersion = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          if ($tagVersion -ne $packageVersion) {
+            throw "Tag version '$tagVersion' does not match package.json version '$packageVersion'."
+          }
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Tests
+        run: bun test
+
+      - name: Build executable
+        run: bun run build
+
+      - name: Create clean release package
+        shell: pwsh
+        run: |
+          $packageRoot = Join-Path $env:GITHUB_WORKSPACE 'release'
+          if (Test-Path -LiteralPath $packageRoot) {
+            Remove-Item -LiteralPath $packageRoot -Recurse -Force
+          }
+
+          $dataRoot = Join-Path $packageRoot 'data'
+          New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $packageRoot 'scoreboard') -Force | Out-Null
+
+          Copy-Item -LiteralPath 'dist\MatchdayControl.exe' -Destination $packageRoot
+          Copy-Item -LiteralPath 'dist\install-service.cmd' -Destination $packageRoot
+          Copy-Item -LiteralPath 'dist\uninstall-service.cmd' -Destination $packageRoot
+          Copy-Item -LiteralPath 'config.example.json' -Destination (Join-Path $dataRoot 'config.example.json')
+          Copy-Item -LiteralPath 'README.md' -Destination $packageRoot
+          Copy-Item -LiteralPath 'LICENSE' -Destination $packageRoot
+
+          $forbidden = @(
+            'config.json',
+            'initial-pin.txt',
+            'matchday.db',
+            'matchday.db-shm',
+            'matchday.db-wal',
+            'matchday.db.bak',
+            'matchday.db.bak2',
+            'matchday.lock',
+            'matchday.log'
+          )
+          $runtimeFiles = Get-ChildItem -LiteralPath $packageRoot -Recurse -File |
+            Where-Object { $forbidden -contains $_.Name }
+          if ($runtimeFiles) {
+            throw "Release package contains runtime data: $($runtimeFiles.FullName -join ', ')"
+          }
+
+          $archiveName = "MatchdayControl-$env:GITHUB_REF_NAME-windows-x64.zip"
+          $archivePath = Join-Path $env:GITHUB_WORKSPACE $archiveName
+          if (Test-Path -LiteralPath $archivePath) {
+            Remove-Item -LiteralPath $archivePath -Force
+          }
+          Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal
+          if (-not (Test-Path -LiteralPath $archivePath)) {
+            throw "Could not create $archiveName."
+          }
+
+          "ARCHIVE_NAME=$archiveName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Get-ChildItem -LiteralPath $packageRoot -Recurse | Select-Object FullName, Length
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME $env:ARCHIVE_NAME `
+            --verify-tag `
+            --title "Matchday Control $env:GITHUB_REF_NAME" `
+            --generate-notes

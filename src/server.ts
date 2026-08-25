@@ -32,6 +32,7 @@ function reportFatal(kind: string, reason: unknown): void {
   if (fatalShutdown) {
     fatalShutdown(1);
   } else {
+    pauseInteractiveFailure();
     process.exit(1);
   }
 }
@@ -175,6 +176,26 @@ function openBrowser(url: string): void {
   }
 }
 
+/**
+ * Um duplo clique abre uma consola que desaparece quando o processo termina.
+ * Aguarda apenas quando existe uma consola interativa; tarefas agendadas e
+ * outros processos sem TTY continuam a terminar imediatamente para poderem
+ * ser reiniciados pelo Windows.
+ */
+function pauseInteractiveFailure(): void {
+  if (process.stdin.isTTY !== true && process.stdout.isTTY !== true) return;
+  console.error(`[diagnostics] Press any key to close this window. Full details: ${startupLogPath}`);
+  try {
+    Bun.spawnSync(["cmd", "/c", "pause"], {
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+  } catch {
+    // The log already contains the error; pausing is only a convenience.
+  }
+}
+
 function main(): void {
   console.log(`[diagnostics] Log file: ${startupLogPath}`);
 
@@ -201,9 +222,12 @@ function main(): void {
 
   const lockPath = join(dataDir, "matchday.lock");
   if (!acquireLock(lockPath)) {
+    const panelUrl = `http://localhost:${config.port}`;
     console.error(
-      `[server] Another Matchday Control instance is already running. The Windows service may already be active. Check the panel at http://localhost:${config.port} or stop the scheduled task before opening another instance.`,
+      `[server] Another Matchday Control instance is already running. The Windows service may already be active. Opening the panel at ${panelUrl}.`,
     );
+    if (config.openBrowserOnStart) openBrowser(panelUrl);
+    pauseInteractiveFailure();
     process.exit(1);
   }
 

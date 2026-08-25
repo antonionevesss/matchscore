@@ -83,6 +83,13 @@ The executable is self-contained and does not require Bun on the operator PC.
 The fonts in `fonts/` are part of the project design and are embedded into the
 panel during the build. Run `bun run fonts` after changing a font file.
 
+### GitHub Releases
+
+Pushing a version tag such as `v1.5.0` starts the Windows release workflow.
+It validates the tag against `package.json`, runs the typecheck and tests,
+builds the self-contained executable, creates a clean ZIP without runtime
+configuration or match data, and publishes the ZIP to the GitHub Release.
+
 Before installing the Windows scheduled task, set a personal PIN:
 
 ```bat
@@ -97,9 +104,10 @@ the initial PIN file is removed after a new PIN is set.
 To start automatically, copy the executable and both `.cmd` scripts to a
 writable folder such as `C:/Scoreboard/MatchdayControl`, then run
 `install-service.cmd` as Administrator. Run `uninstall-service.cmd` to remove
-the scheduled task. The task starts the executable in the background, so do not
-open a second copy of the `.exe` while the task is running; use the panel at
-`http://localhost:8080` instead. The `.exe` can also be run directly.
+the scheduled task. The installer waits for the server and opens the control
+panel in the browser automatically. The task then keeps the executable running
+in the background, so do not open a second copy of the `.exe`; use the browser
+panel instead. The `.exe` can also be run directly for manual/testing mode.
 
 ### Startup diagnostics
 
