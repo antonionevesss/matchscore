@@ -67,7 +67,9 @@ test("cliente OBS autentica, liga e troca a cena", async () => {
         matchscore: "Marcador",
         goal: "Alerta de golo",
         sponsors: "Patrocinadores",
+        music: "Música inicial",
       },
+      sceneLabels: { music: "Música inicial" },
     });
     client.start();
     const result = await client.setScene("goal");
@@ -78,7 +80,12 @@ test("cliente OBS autentica, liga e troca a cena", async () => {
     assert.equal(socket.sent.some((message) => message.op === 1), true);
     const sceneRequest = socket.sent.find((message) => message.op === 6);
     assert.equal(sceneRequest?.d.requestType, "SetCurrentProgramScene");
-  assert.deepEqual(sceneRequest?.d.requestData, { sceneName: "Alerta de golo" });
+    assert.deepEqual(sceneRequest?.d.requestData, { sceneName: "Alerta de golo" });
+    const music = await client.setScene("music");
+    assert.deepEqual(music, { sceneKey: "music", sceneName: "Música inicial" });
+    const musicRequest = socket.sent.filter((message) => message.op === 6).at(-1);
+    assert.equal(musicRequest?.d.requestType, "SetCurrentProgramScene");
+    assert.deepEqual(musicRequest?.d.requestData, { sceneName: "Música inicial" });
     client.stop();
   } finally {
     Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: original });

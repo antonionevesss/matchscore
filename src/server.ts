@@ -10,7 +10,9 @@ import { configureDiagnostics, diagnosticError } from "./diagnostics";
 
 const WATCHDOG_INTERVAL_MS = 5_000;
 const WATCHDOG_MAX_LAG_MS = 10_000;
-const CLOCK_TICK_MS = 1_000;
+// The writer only emits when the displayed second changes, so a short tick
+// keeps Clock.txt and the SSE value aligned without writing 10 files/second.
+const CLOCK_TICK_MS = 100;
 
 function argValue(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -273,10 +275,9 @@ function main(): void {
     openBrowser(`http://localhost:${server.port ?? config.port}`);
   }
 
-  // Relógio: escreve os .txt uma vez por segundo (só quando o valor muda).
+  // Relógio: verifica frequentemente, mas só escreve/publica quando o valor muda.
   setInterval(() => {
-    const current = store.load().state;
-    if (current) writer.writeState(current, Date.now(), false);
+    app.tickClock(Date.now());
   }, CLOCK_TICK_MS);
 
   // Watchdog interno: se o event loop ficar preso >10s, sai para o supervisor reiniciar.

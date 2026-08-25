@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { randomTokenSecret } from "../src/auth";
-import { loadConfig } from "../src/config";
+import { loadConfig, normalizeObsConfig } from "../src/config";
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "mc-config-"));
@@ -103,4 +103,26 @@ test("tokenSecret não hexadecimal é rejeitado", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("cenas OBS personalizadas são normalizadas e preservam os defaults", () => {
+  const config = normalizeObsConfig({
+    scenes: {
+      lineup: "Starting XI",
+      music: "Opening music",
+      invalid_key: "Também válido",
+      "não-válida": "Ignorada",
+    },
+    sceneLabels: {
+      lineup: "Apresentação das equipas",
+    },
+  });
+  assert.equal(config.scenes.music, "Opening music");
+  assert.equal(config.scenes.lineup, "Starting XI");
+  assert.equal(config.scenes.invalid_key, "Também válido");
+  assert.equal("não-válida" in config.scenes, false);
+  assert.equal(config.sceneLabels?.lineup, "Apresentação das equipas");
+  assert.equal(config.scenes.matchscore, "Match score");
+  assert.equal(config.scenes.goal, "Goal alert");
+  assert.equal(config.scenes.sponsors, "Sponsors");
 });

@@ -236,7 +236,7 @@
     .obs-status { color: var(--dim); font-size: 12px; margin: -4px 0 12px; }
     .obs-status.is-connected { color: #86efac; }
     .obs-status.is-error { color: #fca5a5; }
-    .obs-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .obs-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
     .obs-actions .btn { min-height: 48px; padding-inline: 8px; font-size: 12px; }
     .obs-card .section-label { margin-bottom: 10px; }
 
@@ -479,6 +479,7 @@
         "obs.scene.matchscore": "MATCH SCORE",
         "obs.scene.goal": "GOAL",
         "obs.scene.sponsors": "SPONSORS",
+        "obs.scene.music": "INITIAL MUSIC",
         "obs.sceneChanged": "OBS scene changed to {scene}.",
         "score.remove": "Remove {side} goal",
         "score.mark": "Score for {side}",
@@ -558,6 +559,7 @@
         "obs.scene.matchscore": "MARCADOR",
         "obs.scene.goal": "GOLO",
         "obs.scene.sponsors": "PATROCÍNIOS",
+        "obs.scene.music": "MÚSICA INICIAL",
         "obs.sceneChanged": "Cena OBS alterada para {scene}.",
         "score.remove": "Remover golo {side}",
         "score.mark": "Marcar golo {side}",
@@ -594,7 +596,6 @@
       streamRefreshAt: 0,
       offlineTimer: null,
       lastServerAt: 0,
-      now: Date.now(),
     };
 
     const PERIOD_MAX = {
@@ -622,11 +623,7 @@
     };
     const REGULAR_PERIODS = ["FIRST_HALF", "HALF_TIME", "SECOND_HALF", "FULL_TIME"];
     const EXTRA_PERIODS = ["EXTRA_FIRST_HALF", "EXTRA_HALF_TIME", "EXTRA_SECOND_HALF", "EXTRA_FULL_TIME"];
-    const OBS_SCENES = [
-      { key: "matchscore", labelKey: "obs.scene.matchscore" },
-      { key: "goal", labelKey: "obs.scene.goal" },
-      { key: "sponsors", labelKey: "obs.scene.sponsors" },
-    ];
+    const FALLBACK_OBS_SCENE_KEYS = ["matchscore", "goal", "sponsors", "music"];
 
     /* ---------- helpers ---------- */
     function t(key, values = {}) {
@@ -677,11 +674,13 @@
     }
 
     function clockSeconds() {
+      const serverClock = ui.snapshot?.clockSeconds;
+      if (Number.isFinite(serverClock)) return Math.max(0, Math.floor(serverClock));
       const state = ui.snapshot?.state;
       if (!state) return 0;
       const started = state.clockStartedAt ? Date.parse(state.clockStartedAt) : NaN;
       const elapsed = state.clockRunning && Number.isFinite(started)
-        ? Math.max(0, Math.floor((ui.now - started) / 1000))
+        ? Math.max(0, Math.floor((Date.now() - started) / 1000))
         : 0;
       const raw = state.clockBaseSeconds + elapsed;
       return Math.min(PERIOD_MAX[state.period] ?? 0, Math.max(0, raw));
@@ -741,7 +740,11 @@
       const nextState = payload?.state ?? null;
       const currentVersion = ui.snapshot?.state?.version ?? 0;
       if (nextState && nextState.version < currentVersion) return false;
-      ui.snapshot = { state: nextState };
+      const payloadClock = Number(payload?.clockSeconds);
+      ui.snapshot = {
+        state: nextState,
+        clockSeconds: Number.isFinite(payloadClock) ? payloadClock : undefined,
+      };
       if (!nextState) ui.teamDraft = null;
       return true;
     }
@@ -888,6 +891,7 @@
           state.clockRunning,
           state.version,
         ],
+        ui.snapshot?.clockSeconds,
         ui.setupAllowed,
         ui.busy,
         ui.obsBusy,
@@ -1114,15 +1118,32 @@
           <div class="section-label">${t("obs.title")}</div>
           ${obsStatusHtml()}
           <div class="obs-actions" role="group" aria-label="${t("obs.scenes")}">
-            ${OBS_SCENES.map(({ key, labelKey }) => obsButtonHtml(key, t(labelKey))).join("")}
+            ${obsSceneEntries().map(({ key, label }) => obsButtonHtml(key, label)).join("")}
           </div>
         </section>`;
+    }
+
+    function obsSceneEntries() {
+      const scenes = ui.obs?.scenes;
+      const keys = scenes && Object.keys(scenes).length > 0 ? Object.keys(scenes) : FALLBACK_OBS_SCENE_KEYS;
+      return keys.map((key) => ({ key, label: obsSceneLabel(key) }));
+    }
+
+    function obsSceneLabel(key) {
+      const configured = ui.obs?.sceneLabels?.[key];
+      if (configured) return configured;
+      const translationKey = `obs.scene.${key}`;
+      const translated = TRANSLATIONS[ui.language]?.[translationKey] || TRANSLATIONS.en[translationKey];
+      if (translated) return translated;
+      return key
+        .replaceAll(/[-_]+/g, " ")
+        .replace(/\b\w/g, (character) => character.toUpperCase());
     }
 
     function obsButtonHtml(sceneKey, label) {
       const active = ui.obs?.currentSceneName === ui.obs?.scenes?.[sceneKey];
       const disabled = ui.obsBusy || !ui.obs?.enabled || !ui.obs?.connected;
-      return `<button class="btn ${active ? "btn--primary" : ""}" data-obs-scene="${sceneKey}" ${disabled ? "disabled" : ""}>${label}</button>`;
+      return `<button class="btn ${active ? "btn--primary" : ""}" data-obs-scene="${esc(sceneKey)}" ${disabled ? "disabled" : ""}>${esc(label)}</button>`;
     }
 
     async function switchObsScene(sceneKey) {
@@ -1259,7 +1280,7 @@
           method: "POST",
           body: JSON.stringify({ homeTeam: home, awayTeam: away }),
         });
-        ui.snapshot = { state: payload.state };
+        acceptSnapshot(payload);
         setNotice("success", t("setup.started"));
       } catch (error) {
         if (error.code !== "SESSION_EXPIRED") setNotice("error", error.message);
@@ -1268,15 +1289,6 @@
         render();
       }
     }
-
-    /* ---------- clock tick ---------- */
-    setInterval(() => {
-      ui.now = Date.now();
-      const element = $("clock-value");
-      if (element && ui.snapshot?.state?.clockRunning) {
-        element.textContent = formatClock(clockSeconds());
-      }
-    }, 250);
 
     async function refreshHealth() {
       try {

@@ -97,6 +97,8 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
     assert.match(uiHtml, /id="clock-confirm"/);
     assert.match(uiHtml, /@keyframes dialog-in/);
     assert.match(uiHtml, /id="toggle-overtime"/);
+    assert.match(uiHtml, /obs\.scene\.music/);
+    assert.match(uiHtml, /FALLBACK_OBS_SCENE_KEYS/);
     assert.doesNotMatch(uiHtml, /id="undo"/);
     assert.doesNotMatch(uiHtml, /footerHtml|class="footer"/);
 

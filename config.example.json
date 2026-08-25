@@ -18,7 +18,11 @@
     "scenes": {
       "matchscore": "Match score",
       "goal": "Goal alert",
-      "sponsors": "Sponsors"
+      "sponsors": "Sponsors",
+      "music": "Music"
+    },
+    "sceneLabels": {
+      "music": "Initial music"
     }
   },
   "accessPinHash": "",

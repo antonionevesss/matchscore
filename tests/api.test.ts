@@ -138,14 +138,23 @@ test("configuração OBS pode ser alterada e testada pela webapp", async () => {
           matchscore: "MATCH",
           goal: "GOAL",
           sponsors: "SPONSORS",
+          music: "MUSIC",
+          lineup: "LINEUP",
         },
+        sceneLabels: { music: "Initial music", lineup: "Starting line-up" },
       }),
     });
     assert.equal(saved.status, 200);
-    const savedBody = await saved.json() as { settings: { host: string; port: number; passwordSet: boolean }; obs: { enabled: boolean } };
+    const savedBody = await saved.json() as {
+      settings: { host: string; port: number; passwordSet: boolean; scenes: Record<string, string>; sceneLabels: Record<string, string> };
+      obs: { enabled: boolean };
+    };
     assert.equal(savedBody.settings.host, "192.168.1.20");
     assert.equal(savedBody.settings.port, 4456);
     assert.equal(savedBody.settings.passwordSet, true);
+    assert.equal(savedBody.settings.scenes.music, "MUSIC");
+    assert.equal(savedBody.settings.scenes.lineup, "LINEUP");
+    assert.equal(savedBody.settings.sceneLabels.lineup, "Starting line-up");
     assert.equal(savedBody.obs.enabled, false);
 
     const persisted = JSON.parse(readFileSync(join(harness.dir, "config.json"), "utf8")) as {
@@ -181,9 +190,10 @@ test("auth: PIN errado 401, correto dá token; rotas privadas exigem token", asy
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(state.status, 200);
-    const body = (await state.json()) as { state: unknown; setupAllowed: boolean };
+    const body = (await state.json()) as { state: unknown; setupAllowed: boolean; clockSeconds: number };
     assert.equal(body.state, null);
     assert.equal(body.setupAllowed, false);
+    assert.equal(body.clockSeconds, 0);
   } finally {
     await harness.stop();
   }
@@ -364,6 +374,32 @@ test("relógio em contagem sobrevive a reinício (derivado de timestamps)", asyn
     second.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("snapshot e Clock.txt usam o mesmo segundo autoritativo do servidor", async () => {
+  const harness = await startApp({ local: true });
+  try {
+    const token = await login(harness.baseUrl);
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    await fetch(`${harness.baseUrl}/api/setup`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ homeTeam: "A", awayTeam: "B" }),
+    });
+    const period = await fetch(`${harness.baseUrl}/api/command`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ baseVersion: 1, action: { type: "SET_PERIOD", period: "SECOND_HALF" } }),
+    });
+    const periodBody = await period.json() as { state: { clockStartedAt: string } };
+    const startedAt = Date.parse(periodBody.state.clockStartedAt);
+    const expectedNow = startedAt + 1_250;
+    harness.app.tickClock(expectedNow);
+    assert.equal(readFileSync(join(harness.outputDir, "Clock.txt"), "utf8"), "45:01");
+    assert.equal(harness.app.snapshot(expectedNow).clockSeconds, 45 * 60 + 1);
+  } finally {
+    await harness.stop();
   }
 });
 

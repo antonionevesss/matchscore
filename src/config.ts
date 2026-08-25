@@ -23,11 +23,10 @@ export interface ObsConfig {
   host: string;
   port: number;
   password: string;
-  scenes: {
-    matchscore: string;
-    goal: string;
-    sponsors: string;
-  };
+  /** Chave interna → nome exato da cena no OBS. */
+  scenes: Record<string, string>;
+  /** Rótulos opcionais dos botões; sem rótulo a interface deriva-o da chave. */
+  sceneLabels?: Record<string, string>;
 }
 
 export const DEFAULT_OBS_CONFIG: ObsConfig = {
@@ -39,23 +38,57 @@ export const DEFAULT_OBS_CONFIG: ObsConfig = {
     matchscore: "Match score",
     goal: "Goal alert",
     sponsors: "Sponsors",
+    music: "Music",
   },
+  sceneLabels: {},
 };
+
+const OBS_SCENE_KEY_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/i;
+const OBS_RESERVED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+export function isValidObsSceneKey(value: string): boolean {
+  return OBS_SCENE_KEY_PATTERN.test(value) && !OBS_RESERVED_KEYS.has(value.toLowerCase());
+}
+
+function normalizeSceneMap(raw: unknown, fallback: Record<string, string>): Record<string, string> {
+  const source = (raw ?? {}) as Record<string, unknown>;
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fallback)) {
+    if (isValidObsSceneKey(key) && value.trim()) result[key] = value.trim();
+  }
+  for (const [key, value] of Object.entries(source)) {
+    if (!isValidObsSceneKey(key) || typeof value !== "string" || !value.trim()) continue;
+    result[key] = value.trim();
+  }
+  return result;
+}
+
+function normalizeSceneLabels(raw: unknown, scenes: Record<string, string>, fallback: Record<string, string> = {}): Record<string, string> {
+  const source = (raw ?? {}) as Record<string, unknown>;
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fallback)) {
+    if (isValidObsSceneKey(key) && typeof value === "string" && value.trim()) result[key] = value.trim();
+  }
+  for (const [key, value] of Object.entries(source)) {
+    if (!isValidObsSceneKey(key) || typeof value !== "string" || !value.trim()) continue;
+    result[key] = value.trim();
+  }
+  // A label is optional. The web panel uses a translated known label or a
+  // humanised key when no custom label was configured.
+  return Object.fromEntries(Object.entries(result).filter(([key]) => scenes[key] !== undefined));
+}
 
 export function normalizeObsConfig(raw: unknown, fallback: ObsConfig = DEFAULT_OBS_CONFIG): ObsConfig {
   const source = (raw ?? {}) as Record<string, unknown>;
-  const scenes = (source.scenes ?? {}) as Record<string, unknown>;
   const port = Number(source.port ?? fallback.port);
+  const scenes = normalizeSceneMap(source.scenes, fallback.scenes);
   return {
     enabled: source.enabled === undefined ? fallback.enabled : source.enabled === true,
     host: String(source.host ?? fallback.host).trim() || fallback.host,
     port: Number.isInteger(port) && port > 0 && port < 65536 ? port : fallback.port,
     password: String(source.password ?? fallback.password),
-    scenes: {
-      matchscore: String(scenes.matchscore ?? fallback.scenes.matchscore).trim() || fallback.scenes.matchscore,
-      goal: String(scenes.goal ?? fallback.scenes.goal).trim() || fallback.scenes.goal,
-      sponsors: String(scenes.sponsors ?? fallback.scenes.sponsors).trim() || fallback.scenes.sponsors,
-    },
+    scenes,
+    sceneLabels: normalizeSceneLabels(source.sceneLabels, scenes, fallback.sceneLabels),
   };
 }
 

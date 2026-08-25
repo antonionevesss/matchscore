@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { DEFAULT_OBS_CONFIG, type ObsConfig } from "./config";
 
-export const OBS_SCENE_KEYS = ["matchscore", "goal", "sponsors"] as const;
-export type ObsSceneKey = (typeof OBS_SCENE_KEYS)[number];
+/** Chaves das cenas são configuráveis; os quatro nomes abaixo são os defaults. */
+export const OBS_SCENE_KEYS = ["matchscore", "goal", "sponsors", "music"] as const;
+export type ObsSceneKey = string;
 
 export interface ObsStatus {
   enabled: boolean;
@@ -11,6 +12,7 @@ export interface ObsStatus {
   port: number;
   passwordSet: boolean;
   scenes: ObsConfig["scenes"];
+  sceneLabels: NonNullable<ObsConfig["sceneLabels"]>;
   currentSceneName: string | null;
   lastError: string | null;
 }
@@ -97,13 +99,14 @@ export class ObsWebSocketClient {
       port: this.config.port,
       passwordSet: Boolean(this.config.password),
       scenes: this.config.scenes,
+      sceneLabels: this.config.sceneLabels ?? {},
       currentSceneName: this.currentSceneName,
       lastError: this.lastError,
     };
   }
 
   async setScene(key: ObsSceneKey): Promise<{ sceneKey: ObsSceneKey; sceneName: string }> {
-    if (!OBS_SCENE_KEYS.includes(key)) throw new Error("Invalid OBS scene.");
+    if (!Object.prototype.hasOwnProperty.call(this.config.scenes, key)) throw new Error("Invalid OBS scene.");
     if (!this.config.enabled) throw new Error("OBS integration is disabled in the configuration.");
 
     try {

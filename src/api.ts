@@ -1,16 +1,16 @@
 import type { Server } from "bun";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createInitialState, normalizeTeamName, type MatchdayState } from "./domain/matchday";
+import { createInitialState, currentClockSeconds, normalizeTeamName, type MatchdayState } from "./domain/matchday";
 import { applyCommand, isMatchdayCommandAction, type MatchdayCommandAction } from "./commands";
 import { verifyAccessPassword, verifyToken, signToken, type TokenVerification } from "./auth";
 import { MatchdayStore, ConflictError } from "./store";
 import { TxtWriter } from "./writer";
-import { DEFAULT_OBS_CONFIG, normalizeObsConfig, saveObsConfig, type AppConfig, type ObsConfig } from "./config";
-import { OBS_SCENE_KEYS, ObsWebSocketClient, type ObsSceneKey } from "./obs";
+import { DEFAULT_OBS_CONFIG, isValidObsSceneKey, normalizeObsConfig, saveObsConfig, type AppConfig, type ObsConfig } from "./config";
+import { ObsWebSocketClient, type ObsSceneKey } from "./obs";
 import embeddedUi from "./ui/index.html";
 
-export const APP_VERSION = "1.5.0";
+export const APP_VERSION = "1.6.0";
 
 type BunServer = Server<undefined>;
 
@@ -29,6 +29,8 @@ const UI_HTML = loadUiHtml();
 export interface MatchdaySnapshot {
   state: MatchdayState | null;
   undoAvailable: boolean;
+  /** Valor autoritativo usado pelo Clock.txt e enviado a todos os painéis. */
+  clockSeconds: number;
 }
 
 export interface HealthReport {
@@ -105,12 +107,27 @@ export class MatchdayServer {
     return this.server?.port ?? this.config.port;
   }
 
-  snapshot(): MatchdaySnapshot {
+  snapshot(nowMs = Date.now()): MatchdaySnapshot {
     const session = this.store.load();
     return {
       state: session.state,
       undoAvailable: session.history.length > 0,
+      clockSeconds: session.state ? currentClockSeconds(session.state, nowMs) : 0,
     };
+  }
+
+  /**
+   * Atualiza o ficheiro do relógio e publica o novo segundo aos browsers.
+   * A escrita e o evento SSE usam o mesmo instante, evitando que o painel
+   * avance um segundo antes do Clock.txt.
+   */
+  tickClock(nowMs = Date.now()): void {
+    const state = this.store.load().state;
+    if (!state) return;
+    const previousClock = this.writer.lastValue("clock");
+    this.writer.writeState(state, nowMs, false);
+    const nextClock = this.writer.lastValue("clock");
+    if (nextClock !== previousClock) this.broadcast(this.snapshot(nowMs));
   }
 
   async stop(): Promise<void> {
@@ -158,6 +175,7 @@ export class MatchdayServer {
       port: config.port,
       passwordSet: Boolean(config.password),
       scenes: config.scenes,
+      sceneLabels: config.sceneLabels ?? {},
     };
   }
 
@@ -183,10 +201,23 @@ export class MatchdayServer {
     if (scenePatch !== undefined && (!scenePatch || typeof scenePatch !== "object" || Array.isArray(scenePatch))) {
       throw new HttpError(400, "OBS scenes are invalid.");
     }
+    const sceneLabelsPatch = source.sceneLabels;
+    if (
+      sceneLabelsPatch !== undefined &&
+      (!sceneLabelsPatch || typeof sceneLabelsPatch !== "object" || Array.isArray(sceneLabelsPatch))
+    ) {
+      throw new HttpError(400, "OBS scene labels are invalid.");
+    }
     const scenes = { ...current.scenes, ...(scenePatch as Record<string, unknown> | undefined) };
-    for (const key of OBS_SCENE_KEYS) {
-      if (typeof scenes[key] !== "string" || !scenes[key].trim()) {
-        throw new HttpError(400, `The ${key} scene name is required.`);
+    for (const [key, value] of Object.entries(scenes)) {
+      if (!isValidObsSceneKey(key) || typeof value !== "string" || !value.trim()) {
+        throw new HttpError(400, `The OBS scene '${key}' is invalid.`);
+      }
+    }
+    const sceneLabels = { ...(current.sceneLabels ?? {}), ...(sceneLabelsPatch as Record<string, unknown> | undefined) };
+    for (const [key, value] of Object.entries(sceneLabels)) {
+      if (!isValidObsSceneKey(key) || typeof value !== "string" || !value.trim()) {
+        throw new HttpError(400, `The OBS scene label '${key}' is invalid.`);
       }
     }
     const next = normalizeObsConfig({
@@ -196,6 +227,7 @@ export class MatchdayServer {
       // Campo vazio mantém a palavra-passe atual; permite editar o resto sem a expor.
       password: typeof source.password === "string" && source.password.length > 0 ? source.password : current.password,
       scenes,
+      sceneLabels,
     }, current);
     saveObsConfig(this.config, next);
     this.config.obs = next;
@@ -248,7 +280,10 @@ export class MatchdayServer {
       if (path === "/api/obs/scene" && request.method === "POST") {
         this.requireAuth(request, url);
         const body = await jsonObject(request) as { sceneKey?: unknown };
-        if (typeof body.sceneKey !== "string" || !OBS_SCENE_KEYS.includes(body.sceneKey as ObsSceneKey)) {
+        if (
+          typeof body.sceneKey !== "string" ||
+          !Object.prototype.hasOwnProperty.call(this.obsConfig().scenes, body.sceneKey)
+        ) {
           throw new HttpError(400, "Invalid OBS scene.");
         }
         let result: { sceneKey: ObsSceneKey; sceneName: string };

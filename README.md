@@ -22,7 +22,7 @@ Matchday Control (Windows)
 - Undo the last action, swap sides, and reset the match.
 - Atomic scoreboard file writes, only when content changes.
 - Persistent SQLite state with history and rotating backups.
-- Three optional OBS scenes through WebSocket.
+- Configurable OBS scene buttons through WebSocket, including initial music.
 - HTTP API and real-time SSE events.
 - Windows scheduled-task support with automatic restart.
 
@@ -85,7 +85,7 @@ panel during the build. Run `bun run fonts` after changing a font file.
 
 ### GitHub Releases
 
-Pushing a version tag such as `v1.5.0` starts the Windows release workflow.
+Pushing a version tag such as `v1.6.0` starts the Windows release workflow.
 It validates the tag against `package.json`, runs the typecheck and tests,
 builds the self-contained executable, creates a clean ZIP without runtime
 configuration or match data, and publishes the ZIP to the GitHub Release.
@@ -149,10 +149,37 @@ for customised installations.
 | `obs.enabled` | `false` | Enables OBS integration |
 | `obs.host` / `obs.port` | `127.0.0.1:4455` | OBS WebSocket address |
 | `obs.password` | empty | OBS WebSocket password |
-| `obs.scenes` | generic names | Names of the three scenes |
+| `obs.scenes` | matchscore, goal, sponsors, music | Map of button keys to OBS scene names; add more keys to create more buttons |
+| `obs.sceneLabels` | empty | Optional button labels; known keys are translated automatically |
 
 Restart the application after changing configuration. Team names can be changed
 from the panel without editing JSON.
+
+OBS scene buttons are created from the keys in `obs.scenes`. For example:
+
+```json
+{
+  "obs": {
+    "enabled": true,
+    "scenes": {
+      "matchscore": "Score",
+      "goal": "Goal",
+      "sponsors": "Sponsors",
+      "music": "Music",
+      "lineup": "Starting XI"
+    },
+    "sceneLabels": {
+      "music": "Initial music",
+      "lineup": "Starting line-up"
+    }
+  }
+}
+```
+
+The keys may contain letters, numbers, `_` and `-`, and must start with a
+letter. After editing `data/config.json`, restart Matchday Control. The panel
+uses translated labels for the built-in keys and the configured label (or a
+humanised key) for custom scenes.
 
 ### Output files
 
