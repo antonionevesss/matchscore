@@ -12,7 +12,7 @@ import { launchObs as launchObsProcess, type ObsLaunchResult } from "./obs-launc
 import type { AppLogEvent, LogEntry } from "./log";
 import embeddedUi from "./ui/index.html";
 
-export const APP_VERSION = "1.6.0";
+export const APP_VERSION = "1.7.1";
 
 type BunServer = Server<undefined>;
 
