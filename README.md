@@ -149,8 +149,12 @@ for customised installations.
 | `obs.enabled` | `false` | Enables OBS integration |
 | `obs.host` / `obs.port` | `127.0.0.1:4455` | OBS WebSocket address |
 | `obs.password` | empty | OBS WebSocket password |
+| `obs.executablePath` | empty | Optional absolute path to `obs64.exe`; empty means automatic detection |
 | `obs.scenes` | matchscore, goal, sponsors, music | Map of button keys to OBS scene names; add more keys to create more buttons |
 | `obs.sceneLabels` | empty | Optional button labels; known keys are translated automatically |
+| `obs.previewProjector.enabled` | `true` | Enables the Preview projector button |
+| `obs.previewProjector.monitorIndex` | `1` | OBS monitor index; `1` normally corresponds to Display 2, while `-1` opens a window |
+| `obs.previewProjector.autoOpen` | `true` | Opens the Preview projector automatically after OBS connects |
 
 Restart the application after changing configuration. Team names can be changed
 from the panel without editing JSON.
@@ -171,6 +175,11 @@ OBS scene buttons are created from the keys in `obs.scenes`. For example:
     "sceneLabels": {
       "music": "Initial music",
       "lineup": "Starting line-up"
+    },
+    "previewProjector": {
+      "enabled": true,
+      "monitorIndex": 1,
+      "autoOpen": true
     }
   }
 }
@@ -180,6 +189,33 @@ The keys may contain letters, numbers, `_` and `-`, and must start with a
 letter. After editing `data/config.json`, restart Matchday Control. The panel
 uses translated labels for the built-in keys and the configured label (or a
 humanised key) for custom scenes.
+
+The OBS card also has an `Open OBS` button. It checks for an existing visible
+OBS window before starting one, then the background WebSocket connection keeps
+trying until OBS is ready. The executable is detected in the usual OBS Studio
+installation folders and PATH; set `obs.executablePath` when OBS is portable or
+installed somewhere else. The card also has an `Open preview · Display 2` button.
+The projector uses
+OBS WebSocket's `OpenVideoMixProjector` request in Preview mode. `monitorIndex`
+follows the order returned by OBS (`0` for the first monitor, `1` for the
+second); set it to `-1` to open a normal window. If OBS starts after Matchday
+Control, `autoOpen: true` opens the projector as soon as the background
+connection succeeds.
+
+The OBS status shows the active program scene and highlights its button. On
+Windows, the projector indicator checks for a visible OBS projector window;
+`OPEN (confirmed)` means that window was found, while `NOT DETECTED` means the
+last check found none. If Windows cannot run the check, the status remains
+`state not confirmed`. OBS WebSocket itself does not expose a direct
+projector-window status query. Opening the projector is idempotent: if an OBS
+projector window is already detected, another request is not sent, avoiding
+duplicate windows.
+
+The control panel includes an Information area below OBS. Its Status tab shows
+the server, output files, OBS endpoint, active scene and projector target. The
+Logs tab keeps the last 200 events of the current session with timestamp,
+category, level and message. The `Refresh` button in this area manually reloads
+the match state, health report and logs.
 
 ### Output files
 
@@ -216,12 +252,15 @@ Private routes use `Authorization: Bearer <token>` after authenticating at
 `POST /api/auth` with the operational PIN.
 
 - `GET /api/health` — operational, output, and OBS status;
+- `GET /api/logs` — recent operational events (authenticated);
 - `GET /api/state` — current snapshot;
 - `GET /api/stream` — SSE events;
 - `POST /api/command` — executes a version-controlled action;
 - `POST /api/setup` — creates the initial match; host computer only;
 - `GET/PUT /api/obs/settings` — reads or updates OBS configuration;
 - `POST /api/obs/test` — tests the OBS connection;
+- `POST /api/obs/launch` — starts OBS when it is not already running;
+- `POST /api/obs/preview-projector` — opens the OBS Preview projector;
 - `POST /api/obs/scene` — switches to a configured scene.
 
 ## Development commands

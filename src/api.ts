@@ -7,7 +7,9 @@ import { verifyAccessPassword, verifyToken, signToken, type TokenVerification } 
 import { MatchdayStore, ConflictError } from "./store";
 import { TxtWriter } from "./writer";
 import { DEFAULT_OBS_CONFIG, isValidObsSceneKey, normalizeObsConfig, saveObsConfig, type AppConfig, type ObsConfig } from "./config";
-import { ObsWebSocketClient, type ObsSceneKey } from "./obs";
+import { ObsWebSocketClient, type ObsSceneKey, type PreviewProjectorResult } from "./obs";
+import { launchObs as launchObsProcess, type ObsLaunchResult } from "./obs-launcher";
+import type { AppLogEvent, LogEntry } from "./log";
 import embeddedUi from "./ui/index.html";
 
 export const APP_VERSION = "1.6.0";
@@ -60,6 +62,7 @@ const MAX_AUTH_ATTEMPTS = 5;
 const AUTH_WINDOW_MS = 60_000;
 const AUTH_LOCK_MS = 60_000;
 const SSE_ENCODER = new TextEncoder();
+const MAX_LOG_ENTRIES = 200;
 
 interface AuthAttempt {
   count: number;
@@ -72,9 +75,12 @@ export class MatchdayServer {
   private readonly writer: TxtWriter;
   private readonly config: AppConfig;
   private readonly obs: ObsWebSocketClient;
+  private readonly launchObsProcess: (configuredPath?: string) => ObsLaunchResult;
   private readonly localCheck: (request: Request, server: BunServer) => boolean;
   private readonly subscribers = new Set<ReadableStreamDefaultController<Uint8Array>>();
   private readonly authAttempts = new Map<string, AuthAttempt>();
+  private readonly logs: LogEntry[] = [];
+  private nextLogId = 1;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private server: BunServer | null = null;
 
@@ -83,12 +89,17 @@ export class MatchdayServer {
     store: MatchdayStore;
     writer: TxtWriter;
     localCheck?: (request: Request, server: BunServer) => boolean;
+    launchObsProcess?: (configuredPath?: string) => ObsLaunchResult;
   }) {
     this.config = options.config;
     this.store = options.store;
     this.writer = options.writer;
-    this.obs = new ObsWebSocketClient(options.config.obs);
+    this.obs = new ObsWebSocketClient(options.config.obs, {
+      onLog: (event) => this.addLog(event),
+    });
+    this.launchObsProcess = options.launchObsProcess ?? launchObsProcess;
     this.localCheck = options.localCheck ?? isLocalRequest;
+    this.addLog({ category: "system", level: "info", message: "Control initialized." });
   }
 
   start(portOverride?: number): BunServer {
@@ -100,6 +111,7 @@ export class MatchdayServer {
     this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), SSE_HEARTBEAT_MS);
     this.heartbeatTimer.unref?.();
     this.obs.start();
+    this.addLog({ category: "system", level: "success", message: `Server listening on ${this.config.bind}:${this.port}.` });
     return this.server;
   }
 
@@ -131,6 +143,7 @@ export class MatchdayServer {
   }
 
   async stop(): Promise<void> {
+    this.addLog({ category: "system", level: "info", message: "Server stopping." });
     this.obs.stop();
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = null;
@@ -158,6 +171,7 @@ export class MatchdayServer {
     if (!result.applied) return this.snapshot();
     this.store.commit(result.state, result.history);
     this.writer.writeState(result.state, Date.now(), false);
+    this.addLog({ category: "match", level: "info", message: this.describeMatchAction(action, result.state) });
     const snapshot = this.snapshot();
     this.broadcast(snapshot);
     return snapshot;
@@ -174,8 +188,10 @@ export class MatchdayServer {
       host: config.host,
       port: config.port,
       passwordSet: Boolean(config.password),
+      executablePath: config.executablePath ?? "",
       scenes: config.scenes,
       sceneLabels: config.sceneLabels ?? {},
+      previewProjector: config.previewProjector ?? DEFAULT_OBS_CONFIG.previewProjector!,
     };
   }
 
@@ -196,7 +212,36 @@ export class MatchdayServer {
     if (source.password !== undefined && typeof source.password !== "string") {
       throw new HttpError(400, "OBS password is invalid.");
     }
+    if (source.executablePath !== undefined && typeof source.executablePath !== "string") {
+      throw new HttpError(400, "OBS executable path is invalid.");
+    }
     const current = this.obsConfig();
+    const projectorPatch = source.previewProjector;
+    if (
+      projectorPatch !== undefined &&
+      (!projectorPatch || typeof projectorPatch !== "object" || Array.isArray(projectorPatch))
+    ) {
+      throw new HttpError(400, "OBS preview projector settings are invalid.");
+    }
+    const currentProjector = current.previewProjector ?? DEFAULT_OBS_CONFIG.previewProjector!;
+    const projectorSource = projectorPatch as Record<string, unknown> | undefined;
+    if (projectorSource?.enabled !== undefined && typeof projectorSource.enabled !== "boolean") {
+      throw new HttpError(400, "OBS preview projector enabled must be a boolean.");
+    }
+    if (
+      projectorSource?.monitorIndex !== undefined &&
+      (!Number.isInteger(projectorSource.monitorIndex) || Number(projectorSource.monitorIndex) < -1 || Number(projectorSource.monitorIndex) > 1024)
+    ) {
+      throw new HttpError(400, "OBS preview projector monitorIndex is invalid.");
+    }
+    if (projectorSource?.autoOpen !== undefined && typeof projectorSource.autoOpen !== "boolean") {
+      throw new HttpError(400, "OBS preview projector autoOpen must be a boolean.");
+    }
+    const previewProjector = {
+      enabled: projectorSource?.enabled ?? currentProjector.enabled,
+      monitorIndex: projectorSource?.monitorIndex ?? currentProjector.monitorIndex,
+      autoOpen: projectorSource?.autoOpen ?? currentProjector.autoOpen,
+    };
     const scenePatch = source.scenes;
     if (scenePatch !== undefined && (!scenePatch || typeof scenePatch !== "object" || Array.isArray(scenePatch))) {
       throw new HttpError(400, "OBS scenes are invalid.");
@@ -224,14 +269,17 @@ export class MatchdayServer {
       enabled: source.enabled,
       host: source.host,
       port: source.port,
+      executablePath: typeof source.executablePath === "string" ? source.executablePath : current.executablePath,
       // Campo vazio mantém a palavra-passe atual; permite editar o resto sem a expor.
       password: typeof source.password === "string" && source.password.length > 0 ? source.password : current.password,
       scenes,
       sceneLabels,
+      previewProjector,
     }, current);
     saveObsConfig(this.config, next);
     this.config.obs = next;
     this.obs.reconfigure(next);
+    this.addLog({ category: "obs", level: "info", message: "OBS settings updated." });
     return this.obsSettings();
   }
 
@@ -272,6 +320,43 @@ export class MatchdayServer {
           });
         }
       }
+      if (path === "/api/obs/launch" && request.method === "POST") {
+        this.requireAuth(request, url);
+        try {
+          const result = this.launchObs();
+          this.addLog({
+            category: "obs",
+            level: result.alreadyRunning ? "info" : "success",
+            message: result.alreadyRunning
+              ? "OBS was already running; connection check requested."
+              : `OBS started from ${result.executablePath}.`,
+          });
+          return jsonResponse({ ...result, obs: this.obs.status() });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "OBS could not be started.";
+          this.addLog({ category: "obs", level: "error", message: `OBS launch failed: ${message}` });
+          throw new HttpError(503, message, { obs: this.obs.status() });
+        }
+      }
+      if (path === "/api/obs/preview-projector" && request.method === "POST") {
+        this.requireAuth(request, url);
+        try {
+          const result = await this.openPreviewProjector();
+          return jsonResponse({ ...result, obs: this.obs.status() });
+        } catch (error) {
+          throw new HttpError(503, error instanceof Error ? error.message : "OBS unavailable.", {
+            obs: this.obs.status(),
+          });
+        }
+      }
+      if (path === "/api/logs" && request.method === "GET") {
+        this.requireAuth(request, url);
+        const requestedLimit = Number(url.searchParams.get("limit") ?? 100);
+        const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+          ? Math.min(requestedLimit, MAX_LOG_ENTRIES)
+          : 100;
+        return jsonResponse({ logs: this.logs.slice(-limit).reverse() });
+      }
       if (path === "/api/command" && request.method === "POST") {
         this.requireAuth(request, url);
         const body = await jsonObject(request) as { baseVersion?: unknown; action?: unknown };
@@ -305,7 +390,7 @@ export class MatchdayServer {
         return jsonResponse(this.handleSetup(body));
       }
       if (path === "/api/health" && request.method === "GET") {
-        return jsonResponse(this.health());
+        return jsonResponse(await this.health());
       }
       return jsonResponse({ error: "Not found." }, 404);
     } catch (error) {
@@ -367,11 +452,16 @@ export class MatchdayServer {
       this.writer.writeState(next.state, Date.now(), true);
     }
     const snapshot = this.snapshot();
+    this.addLog({ category: "match", level: "success", message: `Match configured: ${homeTeam} vs ${awayTeam}.` });
     this.broadcast(snapshot);
     return snapshot;
   }
 
-  health(): HealthReport {
+  async health(): Promise<HealthReport> {
+    // OBS WebSocket has no projector-status request. Refresh the Windows
+    // window probe before returning health so the UI does not report a
+    // projector merely because OBS accepted an earlier request.
+    await this.obs.refreshPreviewProjectorState();
     let filesOk = true;
     let lastError: string | null = null;
     try {
@@ -400,6 +490,59 @@ export class MatchdayServer {
 
   async setObsScene(sceneKey: ObsSceneKey): Promise<{ sceneKey: ObsSceneKey; sceneName: string }> {
     return this.obs.setScene(sceneKey);
+  }
+
+  async openPreviewProjector(): Promise<PreviewProjectorResult> {
+    const projector = this.obsConfig().previewProjector ?? DEFAULT_OBS_CONFIG.previewProjector!;
+    if (!projector.enabled) throw new Error("The OBS preview projector is disabled in the configuration.");
+    return this.obs.openPreviewProjector();
+  }
+
+  private launchObs(): ObsLaunchResult {
+    const config = this.obsConfig();
+    if (!config.enabled) throw new Error("OBS integration is disabled in the configuration.");
+    const result = this.launchObsProcess(config.executablePath);
+    // The background reconnect is normally already active, but starting it
+    // here also covers an OBS connection that was reconfigured moments ago.
+    this.obs.start();
+    return result;
+  }
+
+  private addLog(event: AppLogEvent): void {
+    const entry: LogEntry = {
+      ...event,
+      id: this.nextLogId,
+      at: new Date().toISOString(),
+    };
+    this.nextLogId += 1;
+    this.logs.push(entry);
+    if (this.logs.length > MAX_LOG_ENTRIES) this.logs.splice(0, this.logs.length - MAX_LOG_ENTRIES);
+  }
+
+  private describeMatchAction(action: MatchdayCommandAction, state: MatchdayState): string {
+    switch (action.type) {
+      case "SCORE":
+      case "SET_SCORE":
+        return `Score updated: ${state.homeTeam} ${state.homeScore}–${state.awayScore} ${state.awayTeam}.`;
+      case "SET_TEAMS":
+        return `Teams updated: ${state.homeTeam} vs ${state.awayTeam}.`;
+      case "SET_PERIOD":
+        return `Period changed to ${state.period}.`;
+      case "START_CLOCK":
+        return "Match clock started.";
+      case "PAUSE_CLOCK":
+        return "Match clock paused.";
+      case "SET_CLOCK":
+        return "Match clock set manually.";
+      case "ADJUST_CLOCK":
+        return "Match clock adjusted.";
+      case "SWITCH_SIDES":
+        return "Teams switched sides.";
+      case "UNDO":
+        return "Last match action undone.";
+      case "RESET":
+        return "Match reset.";
+    }
   }
 
   private requireAuth(request: Request, url: URL): void {

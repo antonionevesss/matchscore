@@ -99,6 +99,15 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
     assert.match(uiHtml, /id="toggle-overtime"/);
     assert.match(uiHtml, /obs\.scene\.music/);
     assert.match(uiHtml, /FALLBACK_OBS_SCENE_KEYS/);
+    assert.match(uiHtml, /api\/obs\/launch/);
+    assert.match(uiHtml, /id="obs-launch"/);
+    assert.match(uiHtml, /api\/obs\/preview-projector/);
+    assert.match(uiHtml, /previewProjectorOpen/);
+    assert.match(uiHtml, /alreadyOpen/);
+    assert.match(uiHtml, /api\/logs/);
+    assert.match(uiHtml, /data-info-tab/);
+    assert.match(uiHtml, /id="info-refresh"/);
+    assert.match(uiHtml, /info\.type\.projector/);
     assert.doesNotMatch(uiHtml, /id="undo"/);
     assert.doesNotMatch(uiHtml, /footerHtml|class="footer"/);
 

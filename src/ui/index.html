@@ -233,12 +233,57 @@
     /* ---------- Actions ---------- */
     .actions-card { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .actions-card .btn { width: 100%; white-space: nowrap; }
-    .obs-status { color: var(--dim); font-size: 12px; margin: -4px 0 12px; }
-    .obs-status.is-connected { color: #86efac; }
-    .obs-status.is-error { color: #fca5a5; }
+    .obs-summary { min-width: 0; }
+    .obs-status-list { display: grid; gap: 8px; margin-top: 13px; }
+    .obs-status-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: baseline; }
+    .obs-status-label { color: var(--dim); font-size: 11px; }
+    .obs-status-value { font-size: 12px; text-align: right; }
+    .obs-status-value.is-connected,
+    .obs-status-value.is-open { color: #86efac; }
+    .obs-status-value.is-error { color: #fca5a5; }
+    .obs-status-value.is-not-open { color: #fcd34d; }
+    .obs-status-value.is-unknown { color: var(--dim); }
+    .obs-status-detail { display: block; color: #fca5a5; font-size: 10px; line-height: 1.4; margin-top: 2px; }
+    .obs-controls { display: grid; gap: 8px; }
     .obs-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
     .obs-actions .btn { min-height: 48px; padding-inline: 8px; font-size: 12px; }
+    .obs-utility-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .obs-utility-actions .btn { min-height: 42px; padding-inline: 8px; font-size: 11px; }
+    .obs-projector { min-height: 48px; padding-inline: 8px; font-size: 12px; }
     .obs-card .section-label { margin-bottom: 10px; }
+
+    /* ---------- Information ---------- */
+    .info-card { display: grid; gap: 16px; }
+    .info-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .info-card__description { color: var(--dim); font-size: 12px; margin-top: 5px; }
+    .info-card__actions { display: flex; align-items: center; gap: 8px; }
+    .info-refresh { min-height: 34px; padding: 0 11px; border: 1px solid var(--border); border-radius: 7px; color: var(--dim); font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .info-refresh:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+    .info-refresh:disabled { opacity: .65; cursor: wait; }
+    .info-tabs { display: flex; gap: 4px; padding: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
+    .info-tab { min-height: 34px; padding: 0 12px; border-radius: 7px; color: var(--dim); font-size: 11px; font-weight: 700; }
+    .info-tab.is-active { background: var(--accent); color: var(--accent-contrast); }
+    .info-tab__count { display: inline-block; min-width: 17px; margin-left: 4px; padding: 1px 4px; border-radius: 9px; background: rgba(255,255,255,.12); font-size: 10px; }
+    .info-tab.is-active .info-tab__count { background: rgba(8,19,33,.16); }
+    .info-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .info-item { min-width: 0; padding: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
+    .info-item__label { display: block; color: var(--dim); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+    .info-item__value { display: block; margin-top: 5px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .info-item__value.is-success { color: #86efac; }
+    .info-item__value.is-warning { color: #fcd34d; }
+    .info-item__value.is-error { color: #fca5a5; }
+    .info-item__detail { display: block; color: var(--dim); font-size: 10px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .logs-list { display: grid; max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+    .log-row { display: grid; grid-template-columns: 142px 96px minmax(0, 1fr); gap: 10px; align-items: center; padding: 9px 11px; border-bottom: 1px solid rgba(48,61,79,.7); font-size: 11px; }
+    .log-row:last-child { border-bottom: 0; }
+    .log-row:nth-child(even) { background: rgba(34,44,58,.28); }
+    .log-time { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .log-type { width: fit-content; padding: 3px 6px; border: 1px solid var(--border); border-radius: 5px; color: var(--dim); font-size: 9px; font-weight: 700; letter-spacing: .06em; }
+    .log-type.is-success { color: #86efac; border-color: rgba(52,199,89,.35); }
+    .log-type.is-warning { color: #fcd34d; border-color: rgba(245,158,11,.35); }
+    .log-type.is-error { color: #fca5a5; border-color: rgba(239,68,68,.35); }
+    .log-message { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .info-empty { padding: 20px; color: var(--dim); text-align: center; font-size: 12px; }
 
     /* ---------- Setup ---------- */
     .setup .field { margin-bottom: 12px; }
@@ -302,7 +347,8 @@
         grid-template-areas:
           "teams score clock"
           "periods periods actions"
-          "obs obs obs";
+          "obs obs obs"
+          "info info info";
       }
       .board .teams-card { grid-area: teams; }
       .board .score { grid-area: score; }
@@ -310,6 +356,7 @@
       .board .periods-card { grid-area: periods; }
       .board .actions-card { grid-area: actions; }
       .board .obs-card { grid-area: obs; }
+      .board .info-card { grid-area: info; }
       .score__num { font-size: clamp(72px, 10vw, 120px); }
       .clock__value { font-size: clamp(64px, 8vw, 104px); }
       .brand h1 { font-size: clamp(38px, 3.2vw, 52px); }
@@ -331,10 +378,8 @@
         column-gap: 24px;
         align-items: center;
       }
-      .obs-card .section-label { grid-column: 1; grid-row: 1; }
-      .obs-card .obs-status { grid-column: 1; grid-row: 2; margin: 0; }
-      .obs-card .obs-actions { grid-column: 2; grid-row: 1 / span 2; }
-      .obs-card .obs-actions { max-width: 760px; }
+      .obs-card .obs-summary { grid-column: 1; grid-row: 1; }
+      .obs-card .obs-controls { grid-column: 2; grid-row: 1; max-width: 760px; }
     }
 
     @media (min-width: 700px) and (max-width: 1179px) {
@@ -347,6 +392,7 @@
       .board .actions-card, .board .obs-card { grid-column: 2; }
       .board .actions-card { grid-row: 3; }
       .board .obs-card { grid-row: 4; }
+      .board .info-card { grid-column: 1 / -1; grid-row: 5; }
     }
 
     @media (max-width: 699px) {
@@ -357,8 +403,17 @@
       .board .clock { order: 2; }
       .board .periods-card { order: 3; }
       .board .obs-card { order: 4; }
-      .board .teams-card { order: 5; }
-      .board .actions-card { order: 6; }
+      .board .info-card { order: 5; }
+      .board .teams-card { order: 6; }
+      .board .actions-card { order: 7; }
+      .info-card__header { flex-direction: column; }
+      .info-card__actions { width: 100%; }
+      .info-refresh { flex: 1; }
+      .info-tabs { width: 100%; }
+      .info-tab { flex: 1; }
+      .info-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .log-row { grid-template-columns: 132px 1fr; gap: 7px; }
+      .log-message { grid-column: 2; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -472,8 +527,14 @@
         "reset.confirmation": "Reset the score and clock for {home} vs {away}?",
         "obs.title": "OBS control",
         "obs.scenes": "OBS scenes",
-        "obs.off": "OBS disabled.",
-        "obs.connected": "Connected · {scene}",
+        "obs.off": "Not configured",
+        "obs.notConfigured": "Not configured",
+        "obs.connection": "Connection",
+        "obs.sceneActive": "Active scene",
+        "obs.projectorWindow": "Preview window",
+        "obs.connectedShort": "Connected",
+        "obs.notAvailable": "Not available",
+        "obs.connected": "Connected · active: {scene}",
         "obs.disconnected": "Disconnected",
         "obs.readyScene": "scene ready",
         "obs.scene.matchscore": "MATCH SCORE",
@@ -481,6 +542,56 @@
         "obs.scene.sponsors": "SPONSORS",
         "obs.scene.music": "INITIAL MUSIC",
         "obs.sceneChanged": "OBS scene changed to {scene}.",
+        "obs.launch": "OPEN OBS",
+        "obs.launching": "OPENING OBS…",
+        "obs.launch.started": "OBS was started; waiting for the connection.",
+        "obs.launch.alreadyRunning": "OBS is already open; checking the connection.",
+        "obs.launch.failed": "Could not start OBS.",
+        "obs.preview": "Preview projector",
+        "obs.preview.open": "OPEN PREVIEW · DISPLAY {display}",
+        "obs.preview.openWindow": "OPEN PREVIEW WINDOW",
+        "obs.preview.opened": "OBS preview opened on Display {display}.",
+        "obs.preview.windowOpened": "OBS preview projector opened in a window.",
+        "obs.preview.alreadyOpen": "✓ PREVIEW OPEN · DISPLAY {display}",
+        "obs.preview.windowAlreadyOpen": "✓ PREVIEW OPEN",
+        "obs.preview.alreadyOpenNotice": "Preview is already open on Display {display}.",
+        "obs.preview.windowAlreadyOpenNotice": "Preview projector is already open.",
+        "obs.preview.requestAccepted": "OBS accepted the request; checking the projector window…",
+        "obs.projector.open": "Projector: OPEN (confirmed)",
+        "obs.projector.notOpen": "Projector: NOT DETECTED",
+        "obs.projector.unknown": "Projector: state not confirmed",
+        "obs.projector.disabled": "Projector: disabled",
+        "obs.projector.openShort": "OPEN · confirmed",
+        "obs.projector.notOpenShort": "NOT DETECTED",
+        "obs.projector.unknownShort": "CHECKING",
+        "obs.projector.disabledShort": "DISABLED",
+        "info.title": "Information",
+        "info.description": "Current server, output and OBS status.",
+        "info.statusTab": "Status",
+        "info.logsTab": "Logs",
+        "info.refresh": "Refresh",
+        "info.refreshing": "Refreshing…",
+        "info.refreshed": "Information refreshed.",
+        "info.server": "Control server",
+        "info.output": "Output files",
+        "info.lastWrite": "Last file update",
+        "info.version": "Version",
+        "info.obsEndpoint": "OBS endpoint",
+        "info.projectorTarget": "Projector target",
+        "info.online": "Online",
+        "info.offline": "Offline",
+        "info.ready": "Ready",
+        "info.degraded": "Degraded",
+        "info.unknown": "Unknown",
+        "info.noValue": "—",
+        "info.display": "Display {display}",
+        "info.windowed": "Windowed",
+        "info.logCount": "{count} events",
+        "info.noLogs": "No events recorded yet.",
+        "info.type.system": "SYSTEM",
+        "info.type.obs": "OBS",
+        "info.type.projector": "PROJECTOR",
+        "info.type.match": "MATCH",
         "score.remove": "Remove {side} goal",
         "score.mark": "Score for {side}",
         "side.home": "home",
@@ -552,8 +663,14 @@
         "reset.confirmation": "Confirmas que queres repor o resultado e o relógio de {home} vs {away}?",
         "obs.title": "Controlo OBS",
         "obs.scenes": "Cenas OBS",
-        "obs.off": "OBS desligado.",
-        "obs.connected": "Ligado · {scene}",
+        "obs.off": "Não configurado",
+        "obs.notConfigured": "Não configurado",
+        "obs.connection": "Ligação",
+        "obs.sceneActive": "Cena ativa",
+        "obs.projectorWindow": "Janela de pré-visualização",
+        "obs.connectedShort": "Ligado",
+        "obs.notAvailable": "Não disponível",
+        "obs.connected": "Ligado · cena ativa: {scene}",
         "obs.disconnected": "Desligado",
         "obs.readyScene": "cena pronta",
         "obs.scene.matchscore": "MARCADOR",
@@ -561,6 +678,56 @@
         "obs.scene.sponsors": "PATROCÍNIOS",
         "obs.scene.music": "MÚSICA INICIAL",
         "obs.sceneChanged": "Cena OBS alterada para {scene}.",
+        "obs.launch": "ABRIR OBS",
+        "obs.launching": "A ABRIR OBS…",
+        "obs.launch.started": "O OBS foi iniciado; a aguardar ligação.",
+        "obs.launch.alreadyRunning": "O OBS já está aberto; a verificar ligação.",
+        "obs.launch.failed": "Não foi possível abrir o OBS.",
+        "obs.preview": "Projetor de pré-visualização",
+        "obs.preview.open": "ABRIR PRÉ-VISUALIZAÇÃO · ECRÃ {display}",
+        "obs.preview.openWindow": "ABRIR PRÉ-VISUALIZAÇÃO",
+        "obs.preview.opened": "Pré-visualização do OBS aberta no ecrã {display}.",
+        "obs.preview.windowOpened": "Projetor de pré-visualização do OBS aberto numa janela.",
+        "obs.preview.alreadyOpen": "✓ PRÉ-VISUALIZAÇÃO ABERTA · ECRÃ {display}",
+        "obs.preview.windowAlreadyOpen": "✓ PRÉ-VISUALIZAÇÃO ABERTA",
+        "obs.preview.alreadyOpenNotice": "A pré-visualização já está aberta no ecrã {display}.",
+        "obs.preview.windowAlreadyOpenNotice": "O projetor de pré-visualização já está aberto.",
+        "obs.preview.requestAccepted": "O OBS aceitou o pedido; a verificar a janela do projetor…",
+        "obs.projector.open": "Projetor: ABERTO (confirmado)",
+        "obs.projector.notOpen": "Projetor: NÃO DETETADO",
+        "obs.projector.unknown": "Projetor: estado não confirmado",
+        "obs.projector.disabled": "Projetor: desativado",
+        "obs.projector.openShort": "ABERTO · confirmado",
+        "obs.projector.notOpenShort": "NÃO DETETADO",
+        "obs.projector.unknownShort": "A VERIFICAR",
+        "obs.projector.disabledShort": "DESATIVADO",
+        "info.title": "Informação",
+        "info.description": "Estado atual do servidor, ficheiros e OBS.",
+        "info.statusTab": "Estado",
+        "info.logsTab": "Logs",
+        "info.refresh": "Atualizar",
+        "info.refreshing": "A atualizar…",
+        "info.refreshed": "Informação atualizada.",
+        "info.server": "Servidor de controlo",
+        "info.output": "Ficheiros de saída",
+        "info.lastWrite": "Última atualização",
+        "info.version": "Versão",
+        "info.obsEndpoint": "Endpoint do OBS",
+        "info.projectorTarget": "Destino do projetor",
+        "info.online": "Ligado",
+        "info.offline": "Desligado",
+        "info.ready": "Pronto",
+        "info.degraded": "Degradado",
+        "info.unknown": "Desconhecido",
+        "info.noValue": "—",
+        "info.display": "Ecrã {display}",
+        "info.windowed": "Janela",
+        "info.logCount": "{count} eventos",
+        "info.noLogs": "Ainda não existem eventos registados.",
+        "info.type.system": "SISTEMA",
+        "info.type.obs": "OBS",
+        "info.type.projector": "PROJETOR",
+        "info.type.match": "JOGO",
         "score.remove": "Remover golo {side}",
         "score.mark": "Marcar golo {side}",
         "side.home": "da casa",
@@ -593,6 +760,11 @@
       noticeTimer: null,
       connection: "connecting",
       obs: null,
+      health: null,
+      logs: [],
+      infoTab: "status",
+      infoBusy: false,
+      obsLaunchBusy: false,
       streamRefreshAt: 0,
       offlineTimer: null,
       lastServerAt: 0,
@@ -809,6 +981,10 @@
     function logout(quiet) {
       ui.token = null;
       ui.snapshot = null;
+      ui.health = null;
+      ui.logs = [];
+      ui.infoBusy = false;
+      ui.obsLaunchBusy = false;
       localStorage.removeItem("mc_token");
       if (ui.source) { ui.source.close(); ui.source = null; }
       if (ui.offlineTimer) { clearTimeout(ui.offlineTimer); ui.offlineTimer = null; }
@@ -868,6 +1044,7 @@
         setNotice("success", t("notice.loggedIn"));
         await refresh();
         connectStream();
+        void refreshHealth();
       } catch (error) {
         setNotice("error", error.message);
         render();
@@ -899,6 +1076,11 @@
         ui.pendingActions.length,
         ui.connection,
         ui.obs,
+        ui.health,
+        ui.logs,
+        ui.infoTab,
+        ui.infoBusy,
+        ui.obsLaunchBusy,
         ui.notice,
       ]);
     }
@@ -941,8 +1123,10 @@
             ${t("empty.message")}<br>
             ${t("empty.setupInstruction", { url: `<strong>http://localhost:${location.port || 8080}</strong>` })}
           </div>
-          ${obsCardHtml()}`;
+          ${obsCardHtml()}
+          ${informationCardHtml()}`;
         bindObsControls();
+        bindInformationControls();
         return;
       }
 
@@ -956,9 +1140,11 @@
             <div class="field"><label for="setup-away">${t("setup.away")}</label><input id="setup-away" maxlength="48"></div>
             <button id="setup-start" class="btn btn--primary btn--block btn--lg">${t("setup.start")}</button>
           </div>
-          ${obsCardHtml()}`;
+          ${obsCardHtml()}
+          ${informationCardHtml()}`;
         $("setup-start").addEventListener("click", startSetup);
         bindObsControls();
+        bindInformationControls();
         return;
       }
 
@@ -1041,6 +1227,7 @@
         </section>
 
         ${obsCardHtml()}
+        ${informationCardHtml()}
         </div>`;
 
       $("team-home-input").addEventListener("input", (event) => {
@@ -1067,6 +1254,7 @@
       document.querySelectorAll(".periods button").forEach((button) =>
         button.addEventListener("click", () => requestPeriod(button.dataset.period)));
       bindObsControls();
+      bindInformationControls();
     }
 
     function headerHtml() {
@@ -1107,18 +1295,43 @@
     }
 
     function obsStatusHtml() {
-      if (!ui.obs || !ui.obs.enabled) return `<p class="obs-status">${t("obs.off")}</p>`;
-      if (ui.obs.connected) return `<p class="obs-status is-connected">${t("obs.connected", { scene: esc(ui.obs.currentSceneName || t("obs.readyScene")) })}</p>`;
-      return `<p class="obs-status is-error">${t("obs.disconnected")}${ui.obs.lastError ? ` · ${esc(ui.obs.lastError)}` : ""}</p>`;
+      if (!ui.obs || !ui.obs.enabled) {
+        return `<div class="obs-status-list">
+          <div class="obs-status-row"><span class="obs-status-label">${t("obs.connection")}</span><strong class="obs-status-value is-unknown">${t("obs.notConfigured")}</strong></div>
+        </div>`;
+      }
+
+      const connected = ui.obs.connected;
+      const projectorState = ui.obs.previewProjector?.enabled === false
+        ? { className: "is-not-open", text: t("obs.projector.disabledShort") }
+        : ui.obs.previewProjectorOpen === true
+          ? { className: "is-open", text: t("obs.projector.openShort") }
+          : ui.obs.previewProjectorOpen === false
+            ? { className: "is-not-open", text: t("obs.projector.notOpenShort") }
+            : { className: "is-unknown", text: t("obs.projector.unknownShort") };
+      return `<div class="obs-status-list">
+        <div class="obs-status-row"><span class="obs-status-label">${t("obs.connection")}</span><strong class="obs-status-value ${connected ? "is-connected" : "is-error"}">${connected ? t("obs.connectedShort") : t("obs.disconnected")}</strong></div>
+        <div class="obs-status-row"><span class="obs-status-label">${t("obs.sceneActive")}</span><strong class="obs-status-value">${esc(connected ? (ui.obs.currentSceneName || t("obs.readyScene")) : t("info.noValue"))}</strong></div>
+        <div class="obs-status-row"><span class="obs-status-label">${t("obs.projectorWindow")}</span><strong class="obs-status-value ${projectorState.className}">${projectorState.text}</strong></div>
+        ${ui.obs.lastError ? `<small class="obs-status-detail">${esc(ui.obs.lastError)}</small>` : ""}
+      </div>`;
     }
 
     function obsCardHtml() {
       return `
         <section class="card obs-card">
-          <div class="section-label">${t("obs.title")}</div>
-          ${obsStatusHtml()}
-          <div class="obs-actions" role="group" aria-label="${t("obs.scenes")}">
-            ${obsSceneEntries().map(({ key, label }) => obsButtonHtml(key, label)).join("")}
+          <div class="obs-summary">
+            <div class="section-label">${t("obs.title")}</div>
+            ${obsStatusHtml()}
+          </div>
+          <div class="obs-controls">
+            <div class="obs-actions" role="group" aria-label="${t("obs.scenes")}">
+              ${obsSceneEntries().map(({ key, label }) => obsButtonHtml(key, label)).join("")}
+            </div>
+            <div class="obs-utility-actions">
+              ${obsLaunchButtonHtml()}
+              ${obsPreviewButtonHtml()}
+            </div>
           </div>
         </section>`;
     }
@@ -1146,6 +1359,149 @@
       return `<button class="btn ${active ? "btn--primary" : ""}" data-obs-scene="${esc(sceneKey)}" ${disabled ? "disabled" : ""}>${esc(label)}</button>`;
     }
 
+    function obsPreviewLabel() {
+      const monitorIndex = Number(ui.obs?.previewProjector?.monitorIndex ?? 1);
+      const active = ui.obs?.previewProjectorOpen === true;
+      if (active) {
+        return Number.isInteger(monitorIndex) && monitorIndex >= 0
+          ? t("obs.preview.alreadyOpen", { display: monitorIndex + 1 })
+          : t("obs.preview.windowAlreadyOpen");
+      }
+      return Number.isInteger(monitorIndex) && monitorIndex >= 0
+        ? t("obs.preview.open", { display: monitorIndex + 1 })
+        : t("obs.preview.openWindow");
+    }
+
+    function obsPreviewButtonHtml() {
+      const disabled = ui.obsBusy || !ui.obs?.enabled || !ui.obs?.connected || ui.obs?.previewProjector?.enabled === false;
+      const active = ui.obs?.previewProjectorOpen === true;
+      return `<button class="btn obs-projector ${active ? "btn--primary" : ""}" id="obs-preview-projector" aria-label="${t("obs.preview")}" ${disabled ? "disabled" : ""}>${esc(obsPreviewLabel())}</button>`;
+    }
+
+    function obsLaunchButtonHtml() {
+      const disabled = ui.obsBusy || ui.obsLaunchBusy || !ui.obs?.enabled;
+      const label = ui.obsLaunchBusy ? t("obs.launching") : t("obs.launch");
+      return `<button class="btn" id="obs-launch" ${disabled ? "disabled" : ""}>${esc(label)}</button>`;
+    }
+
+    function infoItemHtml(label, value, className = "", detail = "") {
+      return `<div class="info-item">
+        <span class="info-item__label">${esc(label)}</span>
+        <strong class="info-item__value ${className}">${esc(value)}</strong>
+        ${detail ? `<small class="info-item__detail">${esc(detail)}</small>` : ""}
+      </div>`;
+    }
+
+    function informationStatusHtml() {
+      const health = ui.health || {};
+      const obs = ui.obs || {};
+      const serverOnline = ui.connection === "online";
+      const filesReady = health.filesOk === true;
+      const projector = obs.previewProjector || {};
+      const monitorIndex = Number(projector.monitorIndex ?? 1);
+      const projectorTarget = Number.isInteger(monitorIndex) && monitorIndex >= 0
+        ? t("info.display", { display: monitorIndex + 1 })
+        : t("info.windowed");
+      const projectorValue = !obs.enabled
+        ? t("obs.notAvailable")
+        : obs.previewProjectorOpen === true
+          ? t("obs.projector.openShort")
+          : obs.previewProjectorOpen === false
+            ? t("obs.projector.notOpenShort")
+            : t("obs.projector.unknownShort");
+      const projectorClass = !obs.enabled
+        ? ""
+        : obs.previewProjectorOpen === true
+          ? "is-success"
+          : obs.previewProjectorOpen === false
+            ? "is-warning"
+            : "";
+      const projectorDetail = !obs.enabled
+        ? t("obs.notConfigured")
+        : obs.previewProjectorOpen === true
+          ? t("obs.projector.openShort")
+          : obs.previewProjectorOpen === false
+            ? t("obs.projector.notOpenShort")
+            : t("obs.projector.unknownShort");
+      const lastWrite = health.lastWriteAt ? formatDateTime(health.lastWriteAt) : t("info.noValue");
+      return `<div class="info-grid">
+        ${infoItemHtml(t("info.server"), serverOnline ? t("info.online") : t("info.offline"), serverOnline ? "is-success" : "is-error", `http://${location.host}`)}
+        ${infoItemHtml(t("info.output"), health.filesOk === undefined ? t("info.unknown") : filesReady ? t("info.ready") : t("info.degraded"), health.filesOk === undefined ? "" : filesReady ? "is-success" : "is-error", health.lastError || t("info.noValue"))}
+        ${infoItemHtml(t("info.obsEndpoint"), obs.enabled ? `${obs.host || t("info.noValue")}:${obs.port || t("info.noValue")}` : t("obs.notAvailable"), obs.connected ? "is-success" : obs.enabled ? "is-warning" : "", obs.connected ? t("info.online") : obs.enabled ? t("info.offline") : t("obs.notConfigured"))}
+        ${infoItemHtml(t("info.projectorTarget"), obs.enabled ? projectorTarget : t("obs.notAvailable"), projectorClass, projectorDetail)}
+        ${infoItemHtml(t("obs.sceneActive"), obs.currentSceneName || t("info.noValue"), "", obs.connected ? t("info.ready") : obs.enabled ? t("info.offline") : t("obs.notConfigured"))}
+        ${infoItemHtml(t("info.lastWrite"), lastWrite, "", health.version ? `${t("info.version")}: ${health.version}` : t("info.noValue"))}
+      </div>`;
+    }
+
+    function formatDateTime(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return t("info.noValue");
+      return date.toLocaleString(ui.language === "pt-PT" ? "pt-PT" : "en-GB", {
+        dateStyle: "short",
+        timeStyle: "medium",
+      });
+    }
+
+    function formatLogTime(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return t("info.noValue");
+      return date.toLocaleString(ui.language === "pt-PT" ? "pt-PT" : "en-GB", {
+        dateStyle: "short",
+        timeStyle: "medium",
+      });
+    }
+
+    function logCategoryLabel(category) {
+      const known = ["system", "obs", "projector", "match"];
+      return t(known.includes(category) ? `info.type.${category}` : "info.type.system");
+    }
+
+    function informationLogsHtml() {
+      const logs = Array.isArray(ui.logs) ? ui.logs : [];
+      if (logs.length === 0) return `<div class="info-empty">${t("info.noLogs")}</div>`;
+      return `<div class="logs-list" role="log" aria-live="polite">
+        ${logs.map((entry) => {
+          const level = ["success", "warning", "error"].includes(entry.level) ? entry.level : "info";
+          return `<div class="log-row" data-level="${esc(level)}">
+            <time class="log-time" datetime="${esc(entry.at)}">${esc(formatLogTime(entry.at))}</time>
+            <span class="log-type ${esc(`is-${level}`)}">${esc(logCategoryLabel(entry.category))}</span>
+            <span class="log-message" title="${esc(entry.message)}">${esc(entry.message)}</span>
+          </div>`;
+        }).join("")}
+      </div>`;
+    }
+
+    function informationCardHtml() {
+      const logsCount = Array.isArray(ui.logs) ? ui.logs.length : 0;
+      const logsActive = ui.infoTab === "logs";
+      return `<section class="card info-card">
+        <div class="info-card__header">
+          <div>
+            <div class="section-label">${t("info.title")}</div>
+            <p class="info-card__description">${t("info.description")}</p>
+          </div>
+          <div class="info-card__actions">
+            <button class="info-refresh" id="info-refresh" type="button" ${ui.infoBusy ? "disabled" : ""}>${ui.infoBusy ? t("info.refreshing") : t("info.refresh")}</button>
+            <div class="info-tabs" role="tablist" aria-label="${t("info.title")}">
+              <button class="info-tab ${logsActive ? "" : "is-active"}" data-info-tab="status" role="tab" aria-selected="${logsActive ? "false" : "true"}">${t("info.statusTab")}</button>
+              <button class="info-tab ${logsActive ? "is-active" : ""}" data-info-tab="logs" role="tab" aria-selected="${logsActive ? "true" : "false"}">${t("info.logsTab")} <span class="info-tab__count">${logsCount}</span></button>
+            </div>
+          </div>
+        </div>
+        ${logsActive ? informationLogsHtml() : informationStatusHtml()}
+      </section>`;
+    }
+
+    function bindInformationControls() {
+      document.querySelectorAll("[data-info-tab]").forEach((button) =>
+        button.addEventListener("click", () => {
+          ui.infoTab = button.dataset.infoTab === "logs" ? "logs" : "status";
+          render();
+        }));
+      $("info-refresh")?.addEventListener("click", () => void refreshInformation());
+    }
+
     async function switchObsScene(sceneKey) {
       if (ui.obsBusy || !ui.obs?.enabled || !ui.obs?.connected) return;
       ui.obsBusy = true;
@@ -1166,6 +1522,54 @@
       }
     }
 
+    async function openObsPreview() {
+      if (ui.obsBusy || !ui.obs?.enabled || !ui.obs?.connected || ui.obs?.previewProjector?.enabled === false) return;
+      ui.obsBusy = true;
+      render();
+      try {
+        const payload = await api("/api/obs/preview-projector", { method: "POST" });
+        ui.obs = payload.obs ?? ui.obs;
+        const monitorIndex = Number(payload.monitorIndex ?? ui.obs?.previewProjector?.monitorIndex ?? 1);
+        if (payload.alreadyOpen === true && Number.isInteger(monitorIndex) && monitorIndex >= 0) {
+          setNotice("success", t("obs.preview.alreadyOpenNotice", { display: monitorIndex + 1 }));
+        } else if (payload.alreadyOpen === true) {
+          setNotice("success", t("obs.preview.windowAlreadyOpenNotice"));
+        } else if (payload.obs?.previewProjectorOpen === true && Number.isInteger(monitorIndex) && monitorIndex >= 0) {
+          setNotice("success", t("obs.preview.opened", { display: monitorIndex + 1 }));
+        } else if (payload.obs?.previewProjectorOpen === true) {
+          setNotice("success", t("obs.preview.windowOpened"));
+        } else {
+          setNotice("info", t("obs.preview.requestAccepted"));
+        }
+      } catch (error) {
+        setNotice("error", error.message);
+        await refreshHealth();
+      } finally {
+        ui.obsBusy = false;
+        render();
+      }
+    }
+
+    async function launchObs() {
+      if (ui.obsBusy || !ui.obs?.enabled) return;
+      ui.obsBusy = true;
+      ui.obsLaunchBusy = true;
+      render();
+      try {
+        const payload = await api("/api/obs/launch", { method: "POST" });
+        ui.obs = payload.obs ?? ui.obs;
+        setNotice(payload.alreadyRunning === true ? "info" : "success", payload.alreadyRunning ? t("obs.launch.alreadyRunning") : t("obs.launch.started"));
+        await refreshHealth();
+      } catch (error) {
+        setNotice("error", error.message || t("obs.launch.failed"));
+        await refreshHealth();
+      } finally {
+        ui.obsBusy = false;
+        ui.obsLaunchBusy = false;
+        render();
+      }
+    }
+
     /* ---------- edição inline e controlo OBS ---------- */
     function saveTeamsInline() {
       const home = $("team-home-input").value.trim();
@@ -1182,6 +1586,8 @@
     function bindObsControls() {
       document.querySelectorAll("[data-obs-scene]").forEach((button) =>
         button.addEventListener("click", () => void switchObsScene(button.dataset.obsScene)));
+      $("obs-launch")?.addEventListener("click", () => void launchObs());
+      $("obs-preview-projector")?.addEventListener("click", () => void openObsPreview());
     }
 
     function adjustClock(direction) {
@@ -1290,11 +1696,41 @@
       }
     }
 
+    async function refreshInformation() {
+      if (ui.infoBusy || !ui.token) return;
+      ui.infoBusy = true;
+      render();
+      try {
+        const [statePayload, health] = await Promise.all([
+          api("/api/state"),
+          api("/api/health"),
+        ]);
+        markServerOnline();
+        acceptSnapshot(statePayload);
+        ui.setupAllowed = Boolean(statePayload.setupAllowed);
+        ui.health = health;
+        ui.obs = health.obs ?? ui.obs;
+        const logPayload = await api("/api/logs?limit=100");
+        ui.logs = Array.isArray(logPayload.logs) ? logPayload.logs : [];
+        setNotice("success", t("info.refreshed"));
+      } catch (error) {
+        if (error.code !== "SESSION_EXPIRED") setNotice("error", error.message);
+      } finally {
+        ui.infoBusy = false;
+        render();
+      }
+    }
+
     async function refreshHealth() {
       try {
         const health = await api("/api/health");
         markServerOnline();
+        ui.health = health;
         ui.obs = health.obs ?? ui.obs;
+        if (ui.token) {
+          const logPayload = await api("/api/logs?limit=100");
+          ui.logs = Array.isArray(logPayload.logs) ? logPayload.logs : [];
+        }
         render();
       } catch { /* health opcional */ }
     }

@@ -23,10 +23,22 @@ export interface ObsConfig {
   host: string;
   port: number;
   password: string;
+  /** Optional absolute path to OBS; empty means automatic detection. */
+  executablePath?: string;
   /** Chave interna → nome exato da cena no OBS. */
   scenes: Record<string, string>;
   /** Rótulos opcionais dos botões; sem rótulo a interface deriva-o da chave. */
   sceneLabels?: Record<string, string>;
+  /** Opções do projetor fullscreen do Preview do OBS. */
+  previewProjector?: ObsPreviewProjectorConfig;
+}
+
+export interface ObsPreviewProjectorConfig {
+  enabled: boolean;
+  /** Índice devolvido pelo OBS; -1 abre numa janela. */
+  monitorIndex: number;
+  /** Abre automaticamente quando a ligação ao OBS fica pronta. */
+  autoOpen: boolean;
 }
 
 export const DEFAULT_OBS_CONFIG: ObsConfig = {
@@ -34,6 +46,7 @@ export const DEFAULT_OBS_CONFIG: ObsConfig = {
   host: "127.0.0.1",
   port: 4455,
   password: "",
+  executablePath: "",
   scenes: {
     matchscore: "Match score",
     goal: "Goal alert",
@@ -41,6 +54,11 @@ export const DEFAULT_OBS_CONFIG: ObsConfig = {
     music: "Music",
   },
   sceneLabels: {},
+  previewProjector: {
+    enabled: true,
+    monitorIndex: 1,
+    autoOpen: true,
+  },
 };
 
 const OBS_SCENE_KEY_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/i;
@@ -78,6 +96,23 @@ function normalizeSceneLabels(raw: unknown, scenes: Record<string, string>, fall
   return Object.fromEntries(Object.entries(result).filter(([key]) => scenes[key] !== undefined));
 }
 
+function normalizePreviewProjector(
+  raw: unknown,
+  fallback: ObsPreviewProjectorConfig,
+): ObsPreviewProjectorConfig {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw)
+    ? raw as Record<string, unknown>
+    : {};
+  const monitorIndex = Number(source.monitorIndex ?? fallback.monitorIndex);
+  return {
+    enabled: source.enabled === undefined ? fallback.enabled : source.enabled === true,
+    monitorIndex: Number.isInteger(monitorIndex) && monitorIndex >= -1 && monitorIndex <= 1024
+      ? monitorIndex
+      : fallback.monitorIndex,
+    autoOpen: source.autoOpen === undefined ? fallback.autoOpen : source.autoOpen === true,
+  };
+}
+
 export function normalizeObsConfig(raw: unknown, fallback: ObsConfig = DEFAULT_OBS_CONFIG): ObsConfig {
   const source = (raw ?? {}) as Record<string, unknown>;
   const port = Number(source.port ?? fallback.port);
@@ -87,8 +122,13 @@ export function normalizeObsConfig(raw: unknown, fallback: ObsConfig = DEFAULT_O
     host: String(source.host ?? fallback.host).trim() || fallback.host,
     port: Number.isInteger(port) && port > 0 && port < 65536 ? port : fallback.port,
     password: String(source.password ?? fallback.password),
+    executablePath: String(source.executablePath ?? fallback.executablePath ?? "").trim(),
     scenes,
     sceneLabels: normalizeSceneLabels(source.sceneLabels, scenes, fallback.sceneLabels),
+    previewProjector: normalizePreviewProjector(
+      source.previewProjector,
+      fallback.previewProjector ?? DEFAULT_OBS_CONFIG.previewProjector!,
+    ),
   };
 }
 

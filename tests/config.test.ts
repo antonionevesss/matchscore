@@ -21,7 +21,13 @@ test("primeiro arranque grava outputDir relativo 'scoreboard' e resolve junto do
       accessPinHash: string;
       tokenSecret: string;
       openBrowserOnStart: boolean;
-      obs: { enabled: boolean; host: string; port: number; scenes: { matchscore: string } };
+      obs: {
+        enabled: boolean;
+        host: string;
+        port: number;
+        scenes: { matchscore: string };
+        previewProjector: { enabled: boolean; monitorIndex: number; autoOpen: boolean };
+      };
     };
     assert.equal(stored.outputDir, "scoreboard");
     assert.equal("telescore" in stored, false);
@@ -32,6 +38,7 @@ test("primeiro arranque grava outputDir relativo 'scoreboard' e resolve junto do
     assert.equal(stored.obs.host, "127.0.0.1");
     assert.equal(stored.obs.port, 4455);
     assert.equal(stored.obs.scenes.matchscore, "Match score");
+    assert.deepEqual(stored.obs.previewProjector, { enabled: true, monitorIndex: 1, autoOpen: true });
     assert.ok(stored.tokenSecret.length >= 32);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -116,12 +123,17 @@ test("cenas OBS personalizadas são normalizadas e preservam os defaults", () =>
     sceneLabels: {
       lineup: "Apresentação das equipas",
     },
+    previewProjector: {
+      monitorIndex: 3,
+      autoOpen: true,
+    },
   });
   assert.equal(config.scenes.music, "Opening music");
   assert.equal(config.scenes.lineup, "Starting XI");
   assert.equal(config.scenes.invalid_key, "Também válido");
   assert.equal("não-válida" in config.scenes, false);
   assert.equal(config.sceneLabels?.lineup, "Apresentação das equipas");
+  assert.deepEqual(config.previewProjector, { enabled: true, monitorIndex: 3, autoOpen: true });
   assert.equal(config.scenes.matchscore, "Match score");
   assert.equal(config.scenes.goal, "Goal alert");
   assert.equal(config.scenes.sponsors, "Sponsors");

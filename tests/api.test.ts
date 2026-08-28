@@ -5,6 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { MatchdayServer } from "../src/api";
 import { hashAccessPassword, randomTokenSecret } from "../src/auth";
+import type { ObsConfig } from "../src/config";
+import type { ObsLaunchResult } from "../src/obs-launcher";
 import { MatchdayStore } from "../src/store";
 import { TxtWriter } from "../src/writer";
 
@@ -24,7 +26,11 @@ interface TestHarness {
   stop: () => Promise<void>;
 }
 
-async function startApp(options: { local?: boolean } = {}): Promise<TestHarness> {
+async function startApp(options: {
+  local?: boolean;
+  obs?: ObsConfig;
+  launchObsProcess?: (configuredPath?: string) => ObsLaunchResult;
+} = {}): Promise<TestHarness> {
   const dir = mkdtempSync(join(tmpdir(), "mc-api-"));
   const dbPath = join(dir, "matchday.db");
   const outputDir = join(dir, "obs");
@@ -42,6 +48,7 @@ async function startApp(options: { local?: boolean } = {}): Promise<TestHarness>
     openBrowserOnStart: false,
     port: 0,
     bind: "127.0.0.1",
+    obs: options.obs,
     accessPinHash: ACCESS_PIN_HASH,
     tokenSecret: SECRET,
     tokenTtlMs: 60_000,
@@ -49,7 +56,7 @@ async function startApp(options: { local?: boolean } = {}): Promise<TestHarness>
   const { store } = MatchdayStore.open(dbPath);
   const writer = new TxtWriter(outputDir);
   const localCheck = () => options.local ?? false;
-  const app = new MatchdayServer({ config, store, writer, localCheck });
+  const app = new MatchdayServer({ config, store, writer, localCheck, launchObsProcess: options.launchObsProcess });
   const server = app.start(0);
   const baseUrl = `http://127.0.0.1:${server.port}`;
   return {
@@ -94,14 +101,53 @@ test("health responde sem autenticação", async () => {
   }
 });
 
+test("logs protegidos mostram eventos com hora, tipo e nível", async () => {
+  const harness = await startApp({ local: true });
+  try {
+    assert.equal((await fetch(`${harness.baseUrl}/api/logs`)).status, 401);
+    const token = await login(harness.baseUrl);
+    const initial = await fetch(`${harness.baseUrl}/api/logs?limit=10`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(initial.status, 200);
+    const initialBody = await initial.json() as {
+      logs: Array<{ at: string; category: string; level: string; message: string }>;
+    };
+    assert.ok(initialBody.logs.length > 0);
+    assert.ok(initialBody.logs.every((entry) => entry.at && entry.category && entry.level && entry.message));
+    assert.ok(initialBody.logs.every((entry) => Number.isFinite(Date.parse(entry.at))));
+    assert.ok(initialBody.logs.some((entry) => entry.category === "system"));
+
+    await fetch(`${harness.baseUrl}/api/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ homeTeam: "HOME", awayTeam: "AWAY" }),
+    });
+    const afterSetup = await fetch(`${harness.baseUrl}/api/logs?limit=200`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const afterSetupBody = await afterSetup.json() as { logs: Array<{ category: string; message: string }> };
+    assert.ok(afterSetupBody.logs.some((entry) => entry.category === "match" && entry.message.includes("HOME")));
+  } finally {
+    await harness.stop();
+  }
+});
+
 test("health expõe OBS e a cena falha de forma isolada quando está desativado", async () => {
   const harness = await startApp();
   try {
     const health = await (await fetch(`${harness.baseUrl}/api/health`)).json() as {
-      obs: { enabled: boolean; connected: boolean };
+      obs: {
+        enabled: boolean;
+        connected: boolean;
+        previewProjector: { monitorIndex: number };
+        previewProjectorOpen: boolean | null;
+      };
     };
     assert.equal(health.obs.enabled, false);
     assert.equal(health.obs.connected, false);
+    assert.equal(health.obs.previewProjector.monitorIndex, 1);
+    assert.equal(health.obs.previewProjectorOpen, null);
 
     const token = await login(harness.baseUrl);
     const response = await fetch(`${harness.baseUrl}/api/obs/scene`, {
@@ -110,6 +156,11 @@ test("health expõe OBS e a cena falha de forma isolada quando está desativado"
       body: JSON.stringify({ sceneKey: "goal" }),
     });
     assert.equal(response.status, 503);
+    const preview = await fetch(`${harness.baseUrl}/api/obs/preview-projector`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    });
+    assert.equal(preview.status, 503);
   } finally {
     await harness.stop();
   }
@@ -142,11 +193,19 @@ test("configuração OBS pode ser alterada e testada pela webapp", async () => {
           lineup: "LINEUP",
         },
         sceneLabels: { music: "Initial music", lineup: "Starting line-up" },
+        previewProjector: { enabled: true, monitorIndex: 1, autoOpen: true },
       }),
     });
     assert.equal(saved.status, 200);
     const savedBody = await saved.json() as {
-      settings: { host: string; port: number; passwordSet: boolean; scenes: Record<string, string>; sceneLabels: Record<string, string> };
+      settings: {
+        host: string;
+        port: number;
+        passwordSet: boolean;
+        scenes: Record<string, string>;
+        sceneLabels: Record<string, string>;
+        previewProjector: { enabled: boolean; monitorIndex: number; autoOpen: boolean };
+      };
       obs: { enabled: boolean };
     };
     assert.equal(savedBody.settings.host, "192.168.1.20");
@@ -155,6 +214,7 @@ test("configuração OBS pode ser alterada e testada pela webapp", async () => {
     assert.equal(savedBody.settings.scenes.music, "MUSIC");
     assert.equal(savedBody.settings.scenes.lineup, "LINEUP");
     assert.equal(savedBody.settings.sceneLabels.lineup, "Starting line-up");
+    assert.deepEqual(savedBody.settings.previewProjector, { enabled: true, monitorIndex: 1, autoOpen: true });
     assert.equal(savedBody.obs.enabled, false);
 
     const persisted = JSON.parse(readFileSync(join(harness.dir, "config.json"), "utf8")) as {
@@ -166,6 +226,41 @@ test("configuração OBS pode ser alterada e testada pela webapp", async () => {
 
     const testConnection = await fetch(`${harness.baseUrl}/api/obs/test`, { method: "POST", headers });
     assert.equal(testConnection.status, 503);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("abrir OBS é uma rota autenticada e não duplica a lógica do launcher", async () => {
+  let requestedPath: string | undefined;
+  const harness = await startApp({
+    obs: {
+      enabled: true,
+      host: "127.0.0.1",
+      port: 4455,
+      password: "",
+      executablePath: "C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe",
+      scenes: { matchscore: "Match score" },
+      sceneLabels: {},
+      previewProjector: { enabled: true, monitorIndex: 1, autoOpen: false },
+    },
+    launchObsProcess: (configuredPath) => {
+      requestedPath = configuredPath;
+      return { alreadyRunning: false, executablePath: configuredPath || "obs64.exe" };
+    },
+  });
+  try {
+    assert.equal((await fetch(`${harness.baseUrl}/api/obs/launch`, { method: "POST" })).status, 401);
+    const token = await login(harness.baseUrl);
+    const response = await fetch(`${harness.baseUrl}/api/obs/launch`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { alreadyRunning: boolean; executablePath: string };
+    assert.equal(body.alreadyRunning, false);
+    assert.equal(body.executablePath, "C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe");
+    assert.equal(requestedPath, body.executablePath);
   } finally {
     await harness.stop();
   }
