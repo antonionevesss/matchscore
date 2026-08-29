@@ -97,6 +97,7 @@ test("health responde sem autenticação", async () => {
     assert.equal(body.status, "ok");
     assert.equal(body.stateVersion, null);
     assert.equal(body.filesOk, true);
+    assert.ok(Number.isFinite(body.serverNowMs));
   } finally {
     await harness.stop();
   }
@@ -557,7 +558,39 @@ test("snapshot e Clock.txt usam o mesmo segundo autoritativo do servidor", async
     const expectedNow = startedAt + 1_250;
     harness.app.tickClock(expectedNow);
     assert.equal(readFileSync(join(harness.outputDir, "Clock.txt"), "utf8"), "45:01");
-    assert.equal(harness.app.snapshot(expectedNow).clockSeconds, 45 * 60 + 1);
+    const snapshot = harness.app.snapshot(expectedNow);
+    assert.equal(snapshot.clockSeconds, 45 * 60 + 1);
+    assert.equal(snapshot.serverNowMs, expectedNow);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("tick do relógio mantém uma sequência contínua no Clock.txt", async () => {
+  const harness = await startApp({ local: true });
+  try {
+    const token = await login(harness.baseUrl);
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    await fetch(`${harness.baseUrl}/api/setup`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ homeTeam: "A", awayTeam: "B" }),
+    });
+    const period = await fetch(`${harness.baseUrl}/api/command`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ baseVersion: 1, action: { type: "SET_PERIOD", period: "SECOND_HALF" } }),
+    });
+    const periodBody = await period.json() as { state: { clockStartedAt: string } };
+    const startedAt = Date.parse(periodBody.state.clockStartedAt);
+
+    for (const offsetMs of [0, 250, 999, 1_000, 1_250, 1_999, 2_000]) {
+      const nowMs = startedAt + offsetMs;
+      harness.app.tickClock(nowMs);
+      const expected = `45:${String(Math.floor(offsetMs / 1_000)).padStart(2, "0")}`;
+      assert.equal(readFileSync(join(harness.outputDir, "Clock.txt"), "utf8"), expected);
+      assert.equal(harness.app.snapshot(nowMs).clockSeconds, 45 * 60 + Math.floor(offsetMs / 1_000));
+    }
   } finally {
     await harness.stop();
   }

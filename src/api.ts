@@ -12,7 +12,7 @@ import { focusObsWindow, launchObs as launchObsProcess, type ObsLaunchResult } f
 import { isLogCategory, isLogLevel, PersistentLogStore, type AppLogEvent, type LogCategory, type LogLevel } from "./log";
 import embeddedUi from "./ui/index.html";
 
-export const APP_VERSION = "1.8.0";
+export const APP_VERSION = "1.8.1";
 
 type BunServer = Server<undefined>;
 
@@ -33,6 +33,8 @@ export interface MatchdaySnapshot {
   undoAvailable: boolean;
   /** Valor autoritativo usado pelo Clock.txt e enviado a todos os painéis. */
   clockSeconds: number;
+  /** Instante do servidor usado como referência para sincronizar os painéis. */
+  serverNowMs: number;
 }
 
 export interface HealthReport {
@@ -46,6 +48,7 @@ export interface HealthReport {
   obs: ReturnType<ObsWebSocketClient["status"]>;
   version: string;
   port: number;
+  serverNowMs: number;
 }
 
 class HttpError extends Error {
@@ -122,11 +125,15 @@ export class MatchdayServer {
   }
 
   snapshot(nowMs = Date.now()): MatchdaySnapshot {
-    const session = this.store.load();
+    return this.snapshotFromSession(this.store.load(), nowMs);
+  }
+
+  private snapshotFromSession(session: { state: MatchdayState | null; history: MatchdayState[] }, nowMs: number): MatchdaySnapshot {
     return {
       state: session.state,
       undoAvailable: session.history.length > 0,
       clockSeconds: session.state ? currentClockSeconds(session.state, nowMs) : 0,
+      serverNowMs: nowMs,
     };
   }
 
@@ -136,12 +143,12 @@ export class MatchdayServer {
    * avance um segundo antes do Clock.txt.
    */
   tickClock(nowMs = Date.now()): void {
-    const state = this.store.load().state;
-    if (!state) return;
+    const session = this.store.load();
+    if (!session.state) return;
     const previousClock = this.writer.lastValue("clock");
-    this.writer.writeState(state, nowMs, false);
+    this.writer.writeState(session.state, nowMs, false);
     const nextClock = this.writer.lastValue("clock");
-    if (nextClock !== previousClock) this.broadcast(this.snapshot(nowMs));
+    if (nextClock !== previousClock) this.broadcast(this.snapshotFromSession(session, nowMs));
   }
 
   async stop(): Promise<void> {
@@ -169,12 +176,13 @@ export class MatchdayServer {
   applyCommandAction(action: MatchdayCommandAction): MatchdaySnapshot {
     const session = this.store.load();
     if (!session.state) return this.snapshot();
-    const result = applyCommand(session.state, session.history, action);
+    const nowMs = Date.now();
+    const result = applyCommand(session.state, session.history, action, new Date(nowMs).toISOString());
     if (!result.applied) return this.snapshot();
     this.store.commit(result.state, result.history);
-    this.writer.writeState(result.state, Date.now(), false);
+    this.writer.writeState(result.state, nowMs, false);
     this.addLog({ category: "match", level: "info", message: this.describeMatchAction(action, result.state) });
-    const snapshot = this.snapshot();
+    const snapshot = this.snapshotFromSession({ state: result.state, history: result.history }, nowMs);
     this.broadcast(snapshot);
     return snapshot;
   }
@@ -510,21 +518,26 @@ export class MatchdayServer {
     }
     const session = this.store.load();
     const now = new Date().toISOString();
+    const nowMs = Date.parse(now);
     let next: ReturnType<typeof applyCommand>;
     if (!session.state) {
       const state = createInitialState(homeTeam, awayTeam, now);
       this.store.commit(state, []);
-      this.writer.writeState(state, Date.now(), true);
+      this.writer.writeState(state, nowMs, true);
+      const snapshot = this.snapshotFromSession({ state, history: [] }, nowMs);
+      this.addLog({ category: "match", level: "success", message: `Match configured: ${homeTeam} vs ${awayTeam}.` });
+      this.broadcast(snapshot);
+      return snapshot;
     } else {
       next = applyCommand(session.state, session.history, { type: "SET_TEAMS", homeTeam, awayTeam }, now);
       if (!next.applied) return this.snapshot();
       this.store.commit(next.state, next.history);
-      this.writer.writeState(next.state, Date.now(), true);
+      this.writer.writeState(next.state, nowMs, true);
+      const snapshot = this.snapshotFromSession({ state: next.state, history: next.history }, nowMs);
+      this.addLog({ category: "match", level: "success", message: `Match configured: ${homeTeam} vs ${awayTeam}.` });
+      this.broadcast(snapshot);
+      return snapshot;
     }
-    const snapshot = this.snapshot();
-    this.addLog({ category: "match", level: "success", message: `Match configured: ${homeTeam} vs ${awayTeam}.` });
-    this.broadcast(snapshot);
-    return snapshot;
   }
 
   async health(): Promise<HealthReport> {
@@ -547,8 +560,9 @@ export class MatchdayServer {
     }
     const state = this.store.load().state;
     const obs = this.obs.status();
+    const serverNowMs = Date.now();
     return {
-      checkedAt: new Date().toISOString(),
+      checkedAt: new Date(serverNowMs).toISOString(),
       status: filesOk && (!obs.enabled || obs.connected) ? "ok" : "degraded",
       uptime: process.uptime(),
       stateVersion: state?.version ?? null,
@@ -558,6 +572,7 @@ export class MatchdayServer {
       obs,
       version: APP_VERSION,
       port: this.port,
+      serverNowMs,
     };
   }
 

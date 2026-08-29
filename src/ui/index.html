@@ -1074,6 +1074,7 @@
       streamRefreshAt: 0,
       offlineTimer: null,
       lastServerAt: 0,
+      clockSync: null,
     };
 
     const PERIOD_MAX = {
@@ -1176,17 +1177,41 @@
         .replaceAll('"', "&quot;");
     }
 
+    function clockPerfNow() {
+      return typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+    }
+
+    function syncClockFromPayload(payload, requestStartedAt = null, requestFinishedAt = null) {
+      const serverNowMs = Number(payload?.serverNowMs);
+      if (!Number.isFinite(serverNowMs)) return;
+      const hasRequestTiming = Number.isFinite(requestStartedAt) && Number.isFinite(requestFinishedAt);
+      const clientPerfMs = hasRequestTiming
+        ? (requestStartedAt + requestFinishedAt) / 2
+        : clockPerfNow();
+      ui.clockSync = { serverNowMs, clientPerfMs };
+    }
+
+    function estimatedServerNowMs() {
+      if (!ui.clockSync) return Date.now();
+      return ui.clockSync.serverNowMs + (clockPerfNow() - ui.clockSync.clientPerfMs);
+    }
+
     function clockSeconds() {
-      const serverClock = ui.snapshot?.clockSeconds;
-      if (Number.isFinite(serverClock)) return Math.max(0, Math.floor(serverClock));
       const state = ui.snapshot?.state;
-      if (!state) return 0;
+      const serverClock = Number(ui.snapshot?.clockSeconds);
+      if (!state) return Number.isFinite(serverClock) ? Math.max(0, Math.floor(serverClock)) : 0;
+
       const started = state.clockStartedAt ? Date.parse(state.clockStartedAt) : NaN;
-      const elapsed = state.clockRunning && Number.isFinite(started)
-        ? Math.max(0, Math.floor((Date.now() - started) / 1000))
-        : 0;
-      const raw = state.clockBaseSeconds + elapsed;
-      return Math.min(PERIOD_MAX[state.period] ?? 0, Math.max(0, raw));
+      if (state.clockRunning && Number.isFinite(started)) {
+        const elapsed = Math.max(0, Math.floor((estimatedServerNowMs() - started) / 1000));
+        const raw = state.clockBaseSeconds + elapsed;
+        return Math.min(PERIOD_MAX[state.period] ?? 0, Math.max(0, raw));
+      }
+
+      if (Number.isFinite(serverClock)) return Math.max(0, Math.floor(serverClock));
+      return Math.min(PERIOD_MAX[state.period] ?? 0, Math.max(0, state.clockBaseSeconds));
     }
 
     function formatClock(total) {
@@ -1195,11 +1220,20 @@
       return String(minutes).padStart(2, "0") + ":" + String(rest).padStart(2, "0");
     }
 
+    function updateClockDisplay() {
+      const element = $("clock-value");
+      if (!element) return;
+      const next = formatClock(clockSeconds());
+      if (element.textContent !== next) element.textContent = next;
+    }
+
     async function api(path, options = {}) {
+      const requestStartedAt = clockPerfNow();
       const headers = { ...(options.headers || {}) };
       if (ui.token) headers.Authorization = "Bearer " + ui.token;
       if (options.body !== undefined) headers["Content-Type"] = "application/json";
       const response = await fetch(path, { ...options, headers });
+      const requestFinishedAt = clockPerfNow();
       if (response.status === 401) {
         logout(true);
         const error = new Error(t("api.expired"));
@@ -1209,9 +1243,16 @@
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (response.status === 409 && payload.snapshot) {
+          syncClockFromPayload(payload.snapshot, requestStartedAt, requestFinishedAt);
           return { snapshot: payload.snapshot, resynced: true };
         }
         throw new Error(payload.error || t("api.generic"));
+      }
+      // Apenas respostas que representam um snapshot podem calibrar o relógio.
+      // /api/health pode demorar enquanto verifica o projetor no Windows e
+      // não deve fazer a UI adiantar-se com uma falsa estimativa de latência.
+      if (payload?.state !== undefined || payload?.snapshot?.state !== undefined) {
+        syncClockFromPayload(payload?.snapshot ?? payload, requestStartedAt, requestFinishedAt);
       }
       return payload;
     }
@@ -1249,6 +1290,7 @@
       const currentVersion = ui.snapshot?.state?.version ?? 0;
       if (nextState && nextState.version < currentVersion) return false;
       const payloadClock = Number(payload?.clockSeconds);
+      if (!ui.clockSync) syncClockFromPayload(payload);
       ui.snapshot = {
         state: nextState,
         clockSeconds: Number.isFinite(payloadClock) ? payloadClock : undefined,
@@ -1283,7 +1325,7 @@
               setNotice("info", t("notice.resynced"));
               break;
             }
-            acceptSnapshot({ state: result.state });
+            acceptSnapshot(result);
             if (action?.type === "SET_TEAMS") ui.teamDraft = null;
             if (action?.type === "RESET") ui.overtimeEnabled = false;
           } catch (error) {
@@ -1353,6 +1395,7 @@
       ui.obsTesting = false;
       ui.obsFocusing = false;
       ui.obsLaunchBusy = false;
+      ui.clockSync = null;
       localStorage.removeItem("mc_token");
       if (ui.source) { ui.source.close(); ui.source = null; }
       if (ui.offlineTimer) { clearTimeout(ui.offlineTimer); ui.offlineTimer = null; }
@@ -2497,6 +2540,9 @@
       } catch { /* health opcional */ }
     }
     setInterval(refreshHealth, 5000);
+    // O servidor continua a ser a fonte de verdade; este timer apenas anima
+    // o valor local entre snapshots, sem reconstruir o DOM a cada segundo.
+    setInterval(updateClockDisplay, 100);
 
     document.addEventListener("keydown", (event) => {
       if (!ui.token || !ui.snapshot?.state || event.repeat) return;

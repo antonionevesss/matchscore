@@ -87,7 +87,7 @@ const result = Bun.spawnSync(
     "--windows-title=Matchday Control",
     "--windows-publisher=Matchday Control contributors",
     "--windows-description=Scoreboard control and OBS scenes",
-    "--windows-version=1.8.0.0",
+    "--windows-version=1.8.1.0",
     "--windows-copyright=Matchday Control contributors",
   ],
   { cwd: root, stdout: "inherit", stderr: "inherit" },
