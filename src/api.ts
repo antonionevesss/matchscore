@@ -12,7 +12,7 @@ import { focusObsWindow, launchObs as launchObsProcess, type ObsLaunchResult } f
 import { isLogCategory, isLogLevel, PersistentLogStore, type AppLogEvent, type LogQuery } from "./log";
 import embeddedUi from "./ui/index.html";
 
-export const APP_VERSION = "1.8.2";
+export const APP_VERSION = "1.9.0";
 
 type BunServer = Server<undefined>;
 
@@ -85,7 +85,9 @@ export class MatchdayServer {
   private readonly subscribers = new Set<ReadableStreamDefaultController<Uint8Array>>();
   private readonly authAttempts = new Map<string, AuthAttempt>();
   private readonly logStore: PersistentLogStore;
+  private currentSession: { state: MatchdayState | null; history: MatchdayState[] } = { state: null, history: [] };
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private authCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private server: BunServer | null = null;
 
   constructor(options: {
@@ -99,6 +101,7 @@ export class MatchdayServer {
     this.config = options.config;
     this.store = options.store;
     this.writer = options.writer;
+    this.currentSession = this.store.load();
     this.obs = new ObsWebSocketClient(options.config.obs, {
       onLog: (event) => this.addLog(event),
     });
@@ -117,6 +120,8 @@ export class MatchdayServer {
     });
     this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), SSE_HEARTBEAT_MS);
     this.heartbeatTimer.unref?.();
+    this.authCleanupTimer = setInterval(() => this.cleanupAuthAttempts(), AUTH_WINDOW_MS);
+    this.authCleanupTimer.unref?.();
     this.obs.start();
     this.addLog({ category: "system", level: "success", message: `Server listening on ${this.config.bind}:${this.port}.` });
     return this.server;
@@ -127,7 +132,7 @@ export class MatchdayServer {
   }
 
   snapshot(nowMs = Date.now()): MatchdaySnapshot {
-    return this.snapshotFromSession(this.store.load(), nowMs);
+    return this.snapshotFromSession(this.currentSession, nowMs);
   }
 
   private snapshotFromSession(session: { state: MatchdayState | null; history: MatchdayState[] }, nowMs: number): MatchdaySnapshot {
@@ -142,16 +147,15 @@ export class MatchdayServer {
 
   /**
    * Atualiza o ficheiro do relógio e publica o novo segundo aos browsers.
-   * A escrita e o evento SSE usam o mesmo instante, evitando que o painel
-   * avance um segundo antes do Clock.txt.
+   * Totalmente em memória (RAM): zero queries SQLite e zero I/O desnecessário.
    */
   tickClock(nowMs = Date.now()): void {
-    const session = this.store.load();
-    if (!session.state) return;
+    const state = this.currentSession.state;
+    if (!state) return;
     const previousClock = this.writer.lastValue("clock");
-    this.writer.writeState(session.state, nowMs, false);
+    this.writer.writeState(state, nowMs, false);
     const nextClock = this.writer.lastValue("clock");
-    if (nextClock !== previousClock) this.broadcast(this.snapshotFromSession(session, nowMs));
+    if (nextClock !== previousClock) this.broadcast(this.snapshotFromSession(this.currentSession, nowMs));
   }
 
   async stop(): Promise<void> {
@@ -159,6 +163,8 @@ export class MatchdayServer {
     this.obs.stop();
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = null;
+    if (this.authCleanupTimer) clearInterval(this.authCleanupTimer);
+    this.authCleanupTimer = null;
     for (const controller of [...this.subscribers]) {
       try {
         controller.close();
@@ -177,18 +183,19 @@ export class MatchdayServer {
    * Aplica um comando internamente (sem autenticação/versão).
    */
   applyCommandAction(action: MatchdayCommandAction): MatchdaySnapshot {
-    const session = this.store.load();
-    if (!session.state) return this.snapshot();
+    if (!this.currentSession.state) return this.snapshot();
     const nowMs = Date.now();
-    const result = applyCommand(session.state, session.history, action, new Date(nowMs).toISOString());
+    const result = applyCommand(this.currentSession.state, this.currentSession.history, action, new Date(nowMs).toISOString());
     if (!result.applied) return this.snapshot();
     this.store.commit(result.state, result.history);
+    this.currentSession = { state: result.state, history: result.history };
     this.writer.writeState(result.state, nowMs, false);
     this.addLog({ category: "match", level: "info", message: this.describeMatchAction(action, result.state) });
-    const snapshot = this.snapshotFromSession({ state: result.state, history: result.history }, nowMs);
+    const snapshot = this.snapshotFromSession(this.currentSession, nowMs);
     this.broadcast(snapshot);
     return snapshot;
   }
+
 
   private obsConfig(): ObsConfig {
     return this.config.obs ?? DEFAULT_OBS_CONFIG;
@@ -484,7 +491,7 @@ export class MatchdayServer {
     if (!isMatchdayCommandAction(action)) {
       throw new HttpError(400, "Invalid action.");
     }
-    const session = this.store.load();
+    const session = this.currentSession;
     if (!session.state) {
       throw new HttpError(404, "No active match. Configure the teams first.");
     }
@@ -500,7 +507,7 @@ export class MatchdayServer {
     if (!homeTeam || !awayTeam) {
       throw new HttpError(422, "Enter both teams.");
     }
-    const session = this.store.load();
+    const session = this.currentSession;
     const now = new Date().toISOString();
     const nowMs = Date.parse(now);
     let state: MatchdayState;
@@ -515,32 +522,24 @@ export class MatchdayServer {
       history = next.history;
     }
     this.store.commit(state, history);
+    this.currentSession = { state, history };
     this.writer.writeState(state, nowMs, true);
-    const snapshot = this.snapshotFromSession({ state, history }, nowMs);
+    const snapshot = this.snapshotFromSession(this.currentSession, nowMs);
     this.addLog({ category: "match", level: "success", message: `Match configured: ${homeTeam} vs ${awayTeam}.` });
     this.broadcast(snapshot);
     return snapshot;
   }
 
   async health(): Promise<HealthReport> {
-    // OBS WebSocket has no projector-status request. Refresh the Windows
-    // window probe before returning health so the UI does not report a
-    // projector merely because OBS accepted an earlier request.
     await this.obs.refreshProcessStateAsync();
     await this.obs.refreshPreviewProjectorState();
     let filesOk = true;
     let lastError: string | null = null;
-    try {
-      this.writer.probe();
-    } catch (error) {
-      filesOk = false;
-      lastError = `Output directory is not writable (${this.writer.outputDir}): ${error instanceof Error ? error.message : String(error)}`;
-    }
     if (this.writer.lastError) {
       filesOk = false;
       lastError = this.writer.lastError;
     }
-    const state = this.store.load().state;
+    const state = this.currentSession.state;
     const obs = this.obs.status();
     const serverNowMs = Date.now();
     return {
@@ -617,12 +616,17 @@ export class MatchdayServer {
     }
   }
 
-  private async auth(request: Request, server: BunServer): Promise<Response> {
-    const key = requestKey(request, server);
+  private cleanupAuthAttempts(): void {
     const now = Date.now();
     for (const [attemptKey, attempt] of this.authAttempts) {
       if (attempt.resetAt <= now && attempt.lockedUntil <= now) this.authAttempts.delete(attemptKey);
     }
+  }
+
+  private async auth(request: Request, server: BunServer): Promise<Response> {
+    const key = requestKey(request, server);
+    const now = Date.now();
+    this.cleanupAuthAttempts();
     const stored = this.authAttempts.get(key);
     const attempt = stored && stored.resetAt > now ? stored : undefined;
     if (attempt && attempt.lockedUntil > now) {

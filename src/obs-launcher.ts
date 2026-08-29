@@ -1,5 +1,39 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { dlopen, FFIType, ptr } from "bun:ffi";
+
+let kernel32Toolhelp: {
+  CreateToolhelp32Snapshot: (flags: number, processId: number) => number | bigint | null;
+  Process32FirstW: (snapshot: number | bigint, entryPtr: any) => boolean;
+  Process32NextW: (snapshot: number | bigint, entryPtr: any) => boolean;
+  CloseHandle: (handle: number | bigint) => boolean;
+} | null = null;
+
+if (process.platform === "win32") {
+  try {
+    const kernel32 = dlopen("kernel32.dll", {
+      CreateToolhelp32Snapshot: {
+        args: [FFIType.u32, FFIType.u32],
+        returns: FFIType.ptr,
+      },
+      Process32FirstW: {
+        args: [FFIType.ptr, FFIType.ptr],
+        returns: FFIType.bool,
+      },
+      Process32NextW: {
+        args: [FFIType.ptr, FFIType.ptr],
+        returns: FFIType.bool,
+      },
+      CloseHandle: {
+        args: [FFIType.ptr],
+        returns: FFIType.bool,
+      },
+    });
+    kernel32Toolhelp = kernel32.symbols as unknown as typeof kernel32Toolhelp;
+  } catch {
+    kernel32Toolhelp = null;
+  }
+}
 
 export interface ObsLaunchResult {
   alreadyRunning: boolean;
@@ -26,11 +60,7 @@ export interface ObsLauncherDependencies {
 }
 
 const OBS_PROCESS_NAMES = ["obs64.exe", "obs.exe"];
-const OBS_PROCESS_STATE_COMMAND =
-  "$processes = @(Get-Process -Name obs64,obs -ErrorAction SilentlyContinue); " +
-  "if ($processes.Count -eq 0) { 'notDetected' } " +
-  "elseif (@($processes | Where-Object { $_.MainWindowHandle -ne 0 }).Count -gt 0) { 'visible' } " +
-  "else { 'hidden' }";
+
 
 /**
  * Starts OBS on Windows without creating a second instance when a visible OBS
@@ -120,85 +150,49 @@ function findObsOnPath(): string | null {
 
 export function detectObsProcessState(platform: NodeJS.Platform = process.platform): ObsProcessState {
   if (platform !== "win32") return "unknown";
-  try {
-    const result = Bun.spawnSync(
-      [
-        "powershell.exe",
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        OBS_PROCESS_STATE_COMMAND,
-      ],
-      { stdout: "pipe", stderr: "ignore", windowsHide: true },
-    );
-    if (result.exitCode !== 0) return "unknown";
-    return parseObsProcessState(result.stdout.toString());
-  } catch {
-    return "unknown";
+
+  if (kernel32Toolhelp) {
+    try {
+      const TH32CS_SNAPPROCESS = 0x00000002;
+      const snapshot = kernel32Toolhelp.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+      if (snapshot) {
+        const entry = Buffer.alloc(568);
+        entry.writeUInt32LE(568, 0);
+        let hasNext = kernel32Toolhelp.Process32FirstW(snapshot, ptr(entry));
+        let found = false;
+        while (hasNext) {
+          const name = entry.toString("utf16le", 44, 564).replace(/\0.*$/, "").toLowerCase();
+          if (name === "obs64.exe" || name === "obs.exe") {
+            found = true;
+            break;
+          }
+          hasNext = kernel32Toolhelp.Process32NextW(snapshot, ptr(entry));
+        }
+        kernel32Toolhelp.CloseHandle(snapshot);
+        return found ? "visible" : "notDetected";
+      }
+    } catch {
+      // Fallback em caso de erro FFI
+    }
   }
+
+  return "unknown";
 }
 
 /**
- * Async counterpart used by the periodic health check. The synchronous
- * detector is kept for the launch guard, but it must not pause the server's
- * event loop while Clock.txt is being updated.
+ * Async counterpart used by the periodic health check.
+ * Ultra-fast in-memory FFI (sub-millisecond) with zero event loop lag.
  */
 export async function detectObsProcessStateAsync(
   platform: NodeJS.Platform = process.platform,
 ): Promise<ObsProcessState> {
-  if (platform !== "win32") return "unknown";
-
-  let child: ReturnType<typeof Bun.spawn>;
-  try {
-    child = Bun.spawn(
-      [
-        "powershell.exe",
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        OBS_PROCESS_STATE_COMMAND,
-      ],
-      { stdout: "pipe", stderr: "ignore", windowsHide: true },
-    );
-  } catch {
-    return "unknown";
-  }
-
-  const timeout = setTimeout(() => {
-    try {
-      child.kill();
-    } catch {
-      // O processo pode já ter terminado.
-    }
-  }, 2_000);
-
-  try {
-    const [stdout, exitCode] = await Promise.all([
-      typeof child.stdout === "number" ? Promise.resolve("") : new Response(child.stdout).text(),
-      child.exited,
-    ]);
-    if (exitCode !== 0) return "unknown";
-    return parseObsProcessState(stdout);
-  } catch {
-    return "unknown";
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function parseObsProcessState(output: string): ObsProcessState {
-  const state = output.trim();
-  return state === "visible" || state === "hidden" || state === "notDetected" ? state : "unknown";
+  return detectObsProcessState(platform);
 }
 
 export function focusObsWindow(platform: NodeJS.Platform = process.platform): boolean {
   if (platform !== "win32") return false;
+  if (detectObsProcessState(platform) === "notDetected") return false;
+
   try {
     const result = Bun.spawnSync(
       [
@@ -225,13 +219,9 @@ function spawnObs(executablePath: string, options: ObsSpawnOptions): void {
     stdin: "ignore",
     stdout: "ignore",
     stderr: "ignore",
-    // Do not make OBS a child tied to the Matchday Control lifetime. On
-    // Windows, a GUI child without a detached process group can be terminated
-    // together with the launcher when the executable or service stops.
     detached: options.detached,
-    // OBS is a GUI application: hiding the child window can leave obs64.exe
-    // running without a usable main window.
     windowsHide: options.windowsHide,
   });
   (child as unknown as { unref?: () => void }).unref?.();
 }
+

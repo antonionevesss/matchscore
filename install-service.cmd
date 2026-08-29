@@ -16,7 +16,7 @@ if not exist "%EXE%" (
   exit /b 1
 )
 echo [ok] Creating scheduled task "MatchdayControl" (startup + automatic restart)...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $exe=(Resolve-Path -LiteralPath '%EXE%').Path; $action=New-ScheduledTaskAction -Execute $exe; $trigger=New-ScheduledTaskTrigger -AtStartup; $principal=New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest; $settings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); Register-ScheduledTask -TaskName 'MatchdayControl' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Matchday Control - marcador do estadio' -Force; Start-ScheduledTask -TaskName 'MatchdayControl'"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $exe=(Resolve-Path -LiteralPath '%EXE%').Path; $action=New-ScheduledTaskAction -Execute $exe; $trigger=New-ScheduledTaskTrigger -AtStartup; $principal=New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest; $settings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero); Register-ScheduledTask -TaskName 'MatchdayControl' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Matchday Control - marcador do estadio' -Force; Start-ScheduledTask -TaskName 'MatchdayControl'"
 if errorlevel 1 (
   echo [error] Failed to create the scheduled task.
   exit /b 1

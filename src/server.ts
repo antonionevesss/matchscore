@@ -268,15 +268,15 @@ function main(): void {
     app.tickClock(Date.now());
   }, CLOCK_TICK_MS);
 
-  // Watchdog interno: se o event loop ficar preso >10s, sai para o supervisor reiniciar.
+  // Monitor de lag do event loop: regista aviso se houver latência anormal,
+  // mas nunca encerra o processo por auto-sabotagem durante o jogo.
   let lastTick = Date.now();
   setInterval(() => {
     const now = Date.now();
     const lag = now - lastTick - WATCHDOG_INTERVAL_MS;
     lastTick = now;
-    if (lag > WATCHDOG_MAX_LAG_MS) {
-      console.error(`[watchdog] Event loop blocked for ${lag}ms; exiting for automatic restart.`);
-      shutdown(1);
+    if (lag > 2_000) {
+      console.warn(`[watchdog] Event loop lag: ${lag}ms.`);
     }
   }, WATCHDOG_INTERVAL_MS);
 
@@ -284,11 +284,6 @@ function main(): void {
   function shutdown(code: number): void {
     if (shuttingDown) return;
     shuttingDown = true;
-    try {
-      writer.probe();
-    } catch {
-      // sem escritas pendentes: o estado já está persistido a cada mutação
-    }
     void app.stop().finally(() => {
       powerRequest.release();
       store.close();

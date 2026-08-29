@@ -78,6 +78,16 @@ function obsAuthentication(password: string, salt: string, challenge: string): s
   return sha256Base64(secret + challenge);
 }
 
+export function isLocalObsHost(host: string): boolean {
+  const normalized = String(host || "").trim().toLowerCase();
+  return (
+    normalized === "127.0.0.1" ||
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized === "::ffff:127.0.0.1"
+  );
+}
+
 export class ObsWebSocketClient {
   private config: ObsConfig;
   private socket: WebSocket | null = null;
@@ -99,6 +109,8 @@ export class ObsWebSocketClient {
   private lastDisconnectedAt: string | null = null;
   private processState: ObsProcessState = "unknown";
   private processLastCheckedAt: string | null = null;
+  private lastProcessCheckAt = 0;
+  private lastProjectorCheckAt = 0;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly detectProjectors: () => Promise<number | null>;
   private readonly detectProcess: () => ObsProcessState;
@@ -184,6 +196,16 @@ export class ObsWebSocketClient {
       this.processLastCheckedAt = new Date().toISOString();
       return this.processState;
     }
+    if (!isLocalObsHost(this.config.host)) {
+      this.processState = this.identified ? "visible" : "unknown";
+      this.processLastCheckedAt = new Date().toISOString();
+      return this.processState;
+    }
+    const now = Date.now();
+    if (this.processState !== "unknown" && now - this.lastProcessCheckAt < 3_000) {
+      return this.processState;
+    }
+    this.lastProcessCheckAt = now;
     try {
       this.processState = this.detectProcess();
     } catch {
@@ -194,9 +216,8 @@ export class ObsWebSocketClient {
   }
 
   /**
-   * Non-blocking process probe used by the periodic health endpoint. Keeping
-   * the PowerShell process asynchronous prevents diagnostics from delaying
-   * the Clock.txt tick loop.
+   * Non-blocking process probe used by the periodic health endpoint.
+   * Uses fast in-memory FFI with TTL cache.
    */
   async refreshProcessStateAsync(): Promise<ObsProcessState> {
     if (!this.config.enabled) {
@@ -204,9 +225,19 @@ export class ObsWebSocketClient {
       this.processLastCheckedAt = new Date().toISOString();
       return this.processState;
     }
+    if (!isLocalObsHost(this.config.host)) {
+      this.processState = this.identified ? "visible" : "unknown";
+      this.processLastCheckedAt = new Date().toISOString();
+      return this.processState;
+    }
+    const now = Date.now();
+    if (this.processState !== "unknown" && now - this.lastProcessCheckAt < 3_000) {
+      return this.processState;
+    }
     if (this.processRefresh) return this.processRefresh;
 
     const refresh = (async (): Promise<ObsProcessState> => {
+      this.lastProcessCheckAt = Date.now();
       try {
         this.processState = await this.detectProcessAsync();
       } catch {
@@ -275,7 +306,7 @@ export class ObsWebSocketClient {
   /**
    * Refreshes the best available projector state. OBS WebSocket has no
    * projector-list/status request, so Windows window enumeration is the
-   * authoritative check when it is available.
+   * authoritative check when it is available on local host.
    */
   async refreshPreviewProjectorState(): Promise<boolean | null> {
     const projector = this.config.previewProjector ?? DEFAULT_OBS_CONFIG.previewProjector!;
@@ -285,6 +316,23 @@ export class ObsWebSocketClient {
       this.lastPreviewProjectorRequestAt = 0;
       return null;
     }
+
+    if (!isLocalObsHost(this.config.host)) {
+      if (this.previewProjectorRequested && this.identified) {
+        this.previewProjectorOpen = true;
+        this.previewProjectorLastCheckedAt = new Date().toISOString();
+        return true;
+      }
+      this.previewProjectorOpen = null;
+      this.previewProjectorLastCheckedAt = new Date().toISOString();
+      return null;
+    }
+
+    const now = Date.now();
+    if (this.previewProjectorOpen !== null && now - this.lastProjectorCheckAt < 3_000) {
+      return this.previewProjectorOpen;
+    }
+    this.lastProjectorCheckAt = now;
 
     let count: number | null;
     try {
@@ -309,9 +357,6 @@ export class ObsWebSocketClient {
       return true;
     }
 
-    // OBS can answer before Windows has finished creating the projector
-    // window. Keep it unknown for a short grace period instead of issuing a
-    // second request and creating duplicate windows.
     if (this.previewProjectorOpening || Date.now() - this.lastPreviewProjectorRequestAt < 3_000) {
       this.previewProjectorOpen = null;
       return null;
@@ -321,6 +366,7 @@ export class ObsWebSocketClient {
     this.lastPreviewProjectorRequestAt = 0;
     return false;
   }
+
 
   private async connectInBackground(): Promise<void> {
     try {
@@ -356,7 +402,9 @@ export class ObsWebSocketClient {
         this.lastError = reason.message;
         this.identified = false;
         this.lastDisconnectedAt = new Date().toISOString();
-        this.log("obs", "error", `OBS connection failed: ${reason.message}`);
+        if (this.reconnectAttempt === 0) {
+          this.log("obs", "error", `OBS connection failed: ${reason.message}`);
+        }
         if (!settled) {
           settled = true;
           reject(reason);
@@ -411,9 +459,6 @@ export class ObsWebSocketClient {
         }
 
         if (message.op === 5 && data.eventType === "ExitStarted") {
-          // OBS is really shutting down; a later process can safely receive
-          // the automatic projector request again. A transient websocket
-          // reconnect must not create a duplicate projector window.
           this.autoProjectorAttempted = false;
           this.previewProjectorRequested = false;
           this.previewProjectorOpen = null;
@@ -442,13 +487,14 @@ export class ObsWebSocketClient {
       socket.onerror = () => fail(new Error("Could not connect to the OBS WebSocket."));
       socket.onclose = () => {
         this.socket = null;
+        const wasIdentified = this.identified;
         this.identified = false;
         this.lastDisconnectedAt = new Date().toISOString();
         this.previewProjectorOpen = null;
         this.previewProjectorCount = null;
         this.previewProjectorOpening = null;
         this.currentSceneName = null;
-        if (!this.stopped) this.log("obs", "warning", "OBS WebSocket connection closed.");
+        if (wasIdentified && !this.stopped) this.log("obs", "warning", "OBS WebSocket connection closed.");
         if (!settled) {
           settled = true;
           reject(new Error(this.lastError || "The OBS connection was closed."));

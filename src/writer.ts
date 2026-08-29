@@ -87,19 +87,27 @@ export class TxtWriter {
   private write(key: keyof TxtFileNames, value: string): boolean {
     const target = join(this.outputDir, this.files[key]);
     const temp = `${target}.${process.pid}.tmp`;
-    try {
-      writeFileSync(temp, value, { encoding: "utf8", flag: "w" });
-      renameSync(temp, target);
-    } catch {
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        writeFileSync(target, value, { encoding: "utf8", flag: "w" });
-      } catch (error) {
-        this.lastErrorValue = `Falha a escrever ${this.files[key]}: ${error instanceof Error ? error.message : String(error)}`;
-        return false;
+        writeFileSync(temp, value, { encoding: "utf8", flag: "w" });
+        renameSync(temp, target);
+        this.last.set(key, value);
+        this.lastWriteAtValue = Date.now();
+        return true;
+      } catch {
+        try {
+          writeFileSync(target, value, { encoding: "utf8", flag: "w" });
+          this.last.set(key, value);
+          this.lastWriteAtValue = Date.now();
+          return true;
+        } catch (error) {
+          if (attempt === 2) {
+            this.lastErrorValue = `Falha a escrever ${this.files[key]}: ${error instanceof Error ? error.message : String(error)}`;
+            return false;
+          }
+        }
       }
     }
-    this.last.set(key, value);
-    this.lastWriteAtValue = Date.now();
-    return true;
+    return false;
   }
 }

@@ -758,6 +758,7 @@
         "validation.teams": "Enter both team names.",
         "validation.clock": "Enter a valid time.",
         "api.expired": "Session expired. Sign in again with the PIN.",
+        "api.timeout": "Request timed out. Check your network connection.",
         "api.generic": "The operation could not be completed."
       },
       "pt-PT": {
@@ -945,6 +946,7 @@
         "validation.teams": "Indica as duas equipas.",
         "validation.clock": "Indica um tempo válido.",
         "api.expired": "Sessão expirada. Entra de novo com o PIN.",
+        "api.timeout": "O pedido expirou. Verifica a ligação à rede.",
         "api.generic": "A operação não foi concluída."
       }
     };
@@ -1098,7 +1100,19 @@
       const clientPerfMs = hasRequestTiming
         ? (requestStartedAt + requestFinishedAt) / 2
         : clockPerfNow();
-      ui.clockSync = { serverNowMs, clientPerfMs };
+
+      if (ui.clockSync) {
+        const estimated = estimatedServerNowMs();
+        const delta = serverNowMs - estimated;
+        if (Math.abs(delta) > 1000) {
+          ui.clockSync = { serverNowMs, clientPerfMs };
+        } else {
+          ui.clockSync.serverNowMs += delta * 0.2;
+          ui.clockSync.clientPerfMs = clientPerfMs;
+        }
+      } else {
+        ui.clockSync = { serverNowMs, clientPerfMs };
+      }
     }
 
     function estimatedServerNowMs() {
@@ -1111,11 +1125,23 @@
       const serverClock = Number(ui.snapshot?.clockSeconds);
       if (!state) return Number.isFinite(serverClock) ? Math.max(0, Math.floor(serverClock)) : 0;
 
-      const started = state.clockStartedAt ? Date.parse(state.clockStartedAt) : NaN;
-      if (state.clockRunning && Number.isFinite(started)) {
-        const elapsed = Math.max(0, Math.floor((estimatedServerNowMs() - started) / 1000));
-        const raw = state.clockBaseSeconds + elapsed;
-        return Math.min(clockMaxSeconds(), Math.max(0, raw));
+      if (state.clockRunning) {
+        // O servidor emite SSE no instante exato em que o Clock.txt muda em disco.
+        // Usamos DIRETAMENTE o clockSeconds do servidor, garantindo sincronização
+        // matemática a 100% com o ficheiro de texto lido pelo OBS.
+        // Se a rede oscilar temporariamente (>1.5s), extrapolamos localmente de forma contínua.
+        if (Number.isFinite(serverClock) && ui.lastSnapshotClientMs) {
+          const timeSinceSnapshot = (clockPerfNow() - ui.lastSnapshotClientMs) / 1000;
+          const extraElapsed = Math.max(0, Math.floor(timeSinceSnapshot));
+          const current = serverClock + extraElapsed;
+          return Math.min(clockMaxSeconds(), Math.max(0, current));
+        }
+
+        const started = state.clockStartedAt ? Date.parse(state.clockStartedAt) : NaN;
+        if (Number.isFinite(started)) {
+          const elapsed = Math.max(0, Math.floor((estimatedServerNowMs() - started) / 1000));
+          return Math.min(clockMaxSeconds(), Math.max(0, state.clockBaseSeconds + elapsed));
+        }
       }
 
       if (Number.isFinite(serverClock)) return Math.max(0, Math.floor(serverClock));
@@ -1136,11 +1162,23 @@
     }
 
     async function api(path, options = {}) {
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => controller.abort(), 6_000) : null;
       const requestStartedAt = clockPerfNow();
       const headers = { ...(options.headers || {}) };
       if (ui.token) headers.Authorization = "Bearer " + ui.token;
       if (options.body !== undefined) headers["Content-Type"] = "application/json";
-      const response = await fetch(path, { ...options, headers });
+      let response;
+      try {
+        response = await fetch(path, { ...options, headers, signal: controller?.signal });
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          throw new Error(t("api.timeout"));
+        }
+        throw err;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
       const requestFinishedAt = clockPerfNow();
       if (response.status === 401) {
         logout(true);
@@ -1157,8 +1195,6 @@
         throw new Error(payload.error || t("api.generic"));
       }
       // Apenas respostas que representam um snapshot podem calibrar o relógio.
-      // /api/health pode demorar enquanto verifica o projetor no Windows e
-      // não deve fazer a UI adiantar-se com uma falsa estimativa de latência.
       if (payload?.state !== undefined || payload?.snapshot?.state !== undefined) {
         syncClockFromPayload(payload?.snapshot ?? payload, requestStartedAt, requestFinishedAt);
       }
@@ -1193,18 +1229,20 @@
       ui.offlineNoticeDismissedUntil = 0;
     }
 
-    function acceptSnapshot(payload) {
+    function acceptSnapshot(payload, requestStartedAt = null, requestFinishedAt = null) {
       const nextState = payload?.state ?? null;
       const currentVersion = ui.snapshot?.state?.version ?? 0;
       if (nextState && nextState.version < currentVersion) return false;
+      syncClockFromPayload(payload, requestStartedAt, requestFinishedAt);
       const payloadClock = Number(payload?.clockSeconds);
-      if (!ui.clockSync) syncClockFromPayload(payload);
       ui.snapshot = {
         state: nextState,
         clockSeconds: Number.isFinite(payloadClock) ? payloadClock : undefined,
         clockMaxSeconds: Number.isFinite(Number(payload?.clockMaxSeconds)) ? Number(payload.clockMaxSeconds) : undefined,
       };
+      ui.lastSnapshotClientMs = clockPerfNow();
       if (!nextState) ui.teamDraft = null;
+      updateClockDisplay();
       return true;
     }
 
@@ -1321,7 +1359,9 @@
       const source = new EventSource("/api/stream?token=" + encodeURIComponent(ui.token));
       ui.source = source;
       ui.connection = "connecting";
+      ui.lastSseAt = Date.now();
       source.onopen = () => {
+        ui.lastSseAt = Date.now();
         markServerOnline();
         render();
         void refresh();
@@ -1343,6 +1383,7 @@
         }
       };
       source.addEventListener("state", (event) => {
+        ui.lastSseAt = Date.now();
         try {
           const next = JSON.parse(event.data);
           if (!acceptSnapshot(next)) return;
@@ -1392,8 +1433,6 @@
           state.clockRunning,
           state.version,
         ],
-        ui.snapshot?.clockSeconds,
-        ui.snapshot?.clockMaxSeconds,
         ui.setupAllowed,
         ui.page,
         ui.busy,
@@ -2446,6 +2485,14 @@
     // o valor local entre snapshots, sem reconstruir o DOM a cada segundo.
     setInterval(updateClockDisplay, 100);
 
+    // Watchdog da ligação SSE: se a ligação ficar silenciosa >25s (queda de WiFi/IP silenciosa),
+    // força a reconexão imediata sem esperar pelo timeout longo do sistema operativo.
+    setInterval(() => {
+      if (ui.token && ui.source && ui.connection === "online" && Date.now() - (ui.lastSseAt || 0) > 25_000) {
+        connectStream();
+      }
+    }, 5000);
+
     document.addEventListener("keydown", (event) => {
       if (!ui.token || !ui.snapshot?.state || event.repeat) return;
       const target = event.target;
@@ -2463,10 +2510,19 @@
     });
 
     /* ---------- boot ---------- */
-    window.addEventListener("online", () => void refresh());
+    window.addEventListener("online", () => {
+      void refresh();
+      if (!ui.source || ui.source.readyState === EventSource.CLOSED) connectStream();
+    });
     window.addEventListener("offline", () => {
       ui.connection = "offline";
       render();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && ui.token) {
+        void refresh();
+        if (!ui.source || ui.source.readyState === EventSource.CLOSED) connectStream();
+      }
     });
 
     applyStaticTranslations();
