@@ -63,6 +63,7 @@ jobs:
           Copy-Item -LiteralPath 'config.example.json' -Destination (Join-Path $dataRoot 'config.example.json')
           Copy-Item -LiteralPath 'README.md' -Destination $packageRoot
           Copy-Item -LiteralPath 'LICENSE' -Destination $packageRoot
+          Copy-Item -LiteralPath 'CHANGELOG.md' -Destination $packageRoot
 
           $forbidden = @(
             'config.json',
@@ -99,7 +100,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          $changelog = Get-Content -Raw 'CHANGELOG.md'
+          $releaseNotes = ($changelog -split '(?m)(?=^## \[)' |
+            Where-Object { $_ -match "(?m)^## \[$([regex]::Escape($tagVersion))\]" } |
+            Select-Object -First 1)
+          if (-not $releaseNotes) {
+            throw "No changelog entry found for version $tagVersion."
+          }
+          $notesPath = Join-Path $env:GITHUB_WORKSPACE 'release-notes.md'
+          Set-Content -LiteralPath $notesPath -Value $releaseNotes -Encoding utf8
+
           gh release create $env:GITHUB_REF_NAME $env:ARCHIVE_NAME `
             --verify-tag `
             --title "Matchday Control $env:GITHUB_REF_NAME" `
-            --generate-notes
+            --notes-file $notesPath

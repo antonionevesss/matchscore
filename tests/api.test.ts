@@ -30,6 +30,7 @@ async function startApp(options: {
   local?: boolean;
   obs?: ObsConfig;
   launchObsProcess?: (configuredPath?: string) => ObsLaunchResult;
+  focusObsProcess?: () => boolean;
 } = {}): Promise<TestHarness> {
   const dir = mkdtempSync(join(tmpdir(), "mc-api-"));
   const dbPath = join(dir, "matchday.db");
@@ -56,7 +57,7 @@ async function startApp(options: {
   const { store } = MatchdayStore.open(dbPath);
   const writer = new TxtWriter(outputDir);
   const localCheck = () => options.local ?? false;
-  const app = new MatchdayServer({ config, store, writer, localCheck, launchObsProcess: options.launchObsProcess });
+  const app = new MatchdayServer({ config, store, writer, localCheck, launchObsProcess: options.launchObsProcess, focusObsProcess: options.focusObsProcess });
   const server = app.start(0);
   const baseUrl = `http://127.0.0.1:${server.port}`;
   return {
@@ -128,6 +129,35 @@ test("logs protegidos mostram eventos com hora, tipo e nível", async () => {
     });
     const afterSetupBody = await afterSetup.json() as { logs: Array<{ category: string; message: string }> };
     assert.ok(afterSetupBody.logs.some((entry) => entry.category === "match" && entry.message.includes("HOME")));
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("logs aceitam filtros e exportação autenticada", async () => {
+  const harness = await startApp({ local: true });
+  try {
+    const token = await login(harness.baseUrl);
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    await fetch(`${harness.baseUrl}/api/setup`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ homeTeam: "CASA", awayTeam: "FORA" }),
+    });
+
+    const filtered = await fetch(`${harness.baseUrl}/api/logs?category=match&q=CASA`, { headers });
+    assert.equal(filtered.status, 200);
+    const filteredBody = await filtered.json() as { total: number; logs: Array<{ category: string; message: string }> };
+    assert.equal(filteredBody.total, 1);
+    assert.equal(filteredBody.logs[0]?.category, "match");
+    assert.match(filteredBody.logs[0]?.message ?? "", /CASA/);
+
+    const exportResponse = await fetch(`${harness.baseUrl}/api/logs/export?category=match`, { headers });
+    assert.equal(exportResponse.status, 200);
+    assert.match(exportResponse.headers.get("content-type") ?? "", /text\/plain/);
+    assert.match(await exportResponse.text(), /CASA/);
+
+    assert.equal((await fetch(`${harness.baseUrl}/api/logs?level=invalid`, { headers })).status, 400);
   } finally {
     await harness.stop();
   }
@@ -261,6 +291,41 @@ test("abrir OBS é uma rota autenticada e não duplica a lógica do launcher", a
     assert.equal(body.alreadyRunning, false);
     assert.equal(body.executablePath, "C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe");
     assert.equal(requestedPath, body.executablePath);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("recuperar ligação OBS exige autenticação e devolve o estado atual", async () => {
+  const harness = await startApp();
+  try {
+    assert.equal((await fetch(`${harness.baseUrl}/api/obs/retry`, { method: "POST" })).status, 401);
+    const token = await login(harness.baseUrl);
+    const response = await fetch(`${harness.baseUrl}/api/obs/retry`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.status, 503);
+    const body = await response.json() as { obs: { enabled: boolean } };
+    assert.equal(body.obs.enabled, false);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("focar a janela OBS é autenticado e reporta quando a janela existe", async () => {
+  let focused = false;
+  const harness = await startApp({ focusObsProcess: () => { focused = true; return true; } });
+  try {
+    const token = await login(harness.baseUrl);
+    const response = await fetch(`${harness.baseUrl}/api/obs/focus`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(focused, true);
+    const body = await response.json() as { focused: boolean };
+    assert.equal(body.focused, true);
   } finally {
     await harness.stop();
   }

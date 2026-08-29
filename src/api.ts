@@ -8,11 +8,11 @@ import { MatchdayStore, ConflictError } from "./store";
 import { TxtWriter } from "./writer";
 import { DEFAULT_OBS_CONFIG, isValidObsSceneKey, normalizeObsConfig, saveObsConfig, type AppConfig, type ObsConfig } from "./config";
 import { ObsWebSocketClient, type ObsSceneKey, type PreviewProjectorResult } from "./obs";
-import { launchObs as launchObsProcess, type ObsLaunchResult } from "./obs-launcher";
-import type { AppLogEvent, LogEntry } from "./log";
+import { focusObsWindow, launchObs as launchObsProcess, type ObsLaunchResult } from "./obs-launcher";
+import { isLogCategory, isLogLevel, PersistentLogStore, type AppLogEvent, type LogCategory, type LogLevel } from "./log";
 import embeddedUi from "./ui/index.html";
 
-export const APP_VERSION = "1.7.1";
+export const APP_VERSION = "1.8.0";
 
 type BunServer = Server<undefined>;
 
@@ -36,6 +36,7 @@ export interface MatchdaySnapshot {
 }
 
 export interface HealthReport {
+  checkedAt: string;
   status: "ok" | "degraded";
   uptime: number;
   stateVersion: number | null;
@@ -62,8 +63,6 @@ const MAX_AUTH_ATTEMPTS = 5;
 const AUTH_WINDOW_MS = 60_000;
 const AUTH_LOCK_MS = 60_000;
 const SSE_ENCODER = new TextEncoder();
-const MAX_LOG_ENTRIES = 200;
-
 interface AuthAttempt {
   count: number;
   resetAt: number;
@@ -76,11 +75,11 @@ export class MatchdayServer {
   private readonly config: AppConfig;
   private readonly obs: ObsWebSocketClient;
   private readonly launchObsProcess: (configuredPath?: string) => ObsLaunchResult;
+  private readonly focusObsProcess: () => boolean;
   private readonly localCheck: (request: Request, server: BunServer) => boolean;
   private readonly subscribers = new Set<ReadableStreamDefaultController<Uint8Array>>();
   private readonly authAttempts = new Map<string, AuthAttempt>();
-  private readonly logs: LogEntry[] = [];
-  private nextLogId = 1;
+  private readonly logStore: PersistentLogStore;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private server: BunServer | null = null;
 
@@ -90,6 +89,7 @@ export class MatchdayServer {
     writer: TxtWriter;
     localCheck?: (request: Request, server: BunServer) => boolean;
     launchObsProcess?: (configuredPath?: string) => ObsLaunchResult;
+    focusObsProcess?: () => boolean;
   }) {
     this.config = options.config;
     this.store = options.store;
@@ -97,7 +97,9 @@ export class MatchdayServer {
     this.obs = new ObsWebSocketClient(options.config.obs, {
       onLog: (event) => this.addLog(event),
     });
+    this.logStore = new PersistentLogStore(join(options.config.exeDir, "events.jsonl"));
     this.launchObsProcess = options.launchObsProcess ?? launchObsProcess;
+    this.focusObsProcess = options.focusObsProcess ?? focusObsWindow;
     this.localCheck = options.localCheck ?? isLocalRequest;
     this.addLog({ category: "system", level: "info", message: "Control initialized." });
   }
@@ -254,12 +256,28 @@ export class MatchdayServer {
       throw new HttpError(400, "OBS scene labels are invalid.");
     }
     const scenes = { ...current.scenes, ...(scenePatch as Record<string, unknown> | undefined) };
+    const removeSceneKeys = source.removeSceneKeys;
+    if (removeSceneKeys !== undefined && (!Array.isArray(removeSceneKeys) || removeSceneKeys.some((key) => typeof key !== "string"))) {
+      throw new HttpError(400, "OBS scene removals are invalid.");
+    }
+    for (const key of (removeSceneKeys as string[] | undefined) ?? []) {
+      if (!isValidObsSceneKey(key)) throw new HttpError(400, `The OBS scene '${key}' is invalid.`);
+      delete scenes[key];
+    }
     for (const [key, value] of Object.entries(scenes)) {
       if (!isValidObsSceneKey(key) || typeof value !== "string" || !value.trim()) {
         throw new HttpError(400, `The OBS scene '${key}' is invalid.`);
       }
     }
     const sceneLabels = { ...(current.sceneLabels ?? {}), ...(sceneLabelsPatch as Record<string, unknown> | undefined) };
+    const removeSceneLabelKeys = source.removeSceneLabelKeys;
+    if (removeSceneLabelKeys !== undefined && (!Array.isArray(removeSceneLabelKeys) || removeSceneLabelKeys.some((key) => typeof key !== "string"))) {
+      throw new HttpError(400, "OBS scene label removals are invalid.");
+    }
+    for (const key of (removeSceneLabelKeys as string[] | undefined) ?? []) {
+      if (!isValidObsSceneKey(key)) throw new HttpError(400, `The OBS scene label '${key}' is invalid.`);
+      delete sceneLabels[key];
+    }
     for (const [key, value] of Object.entries(sceneLabels)) {
       if (!isValidObsSceneKey(key) || typeof value !== "string" || !value.trim()) {
         throw new HttpError(400, `The OBS scene label '${key}' is invalid.`);
@@ -320,6 +338,27 @@ export class MatchdayServer {
           });
         }
       }
+      if (path === "/api/obs/focus" && request.method === "POST") {
+        this.requireAuth(request, url);
+        const focused = this.focusObsProcess();
+        if (!focused) {
+          this.addLog({ category: "obs", level: "warning", message: "OBS window could not be brought to the foreground." });
+          throw new HttpError(409, "The OBS window was not found. Open OBS first.", { obs: this.obs.status() });
+        }
+        this.addLog({ category: "obs", level: "success", message: "OBS window brought to the foreground." });
+        return jsonResponse({ focused: true, obs: this.obs.status() });
+      }
+      if (path === "/api/obs/retry" && request.method === "POST") {
+        this.requireAuth(request, url);
+        try {
+          this.obs.start();
+          return jsonResponse({ obs: await this.obs.testConnection() });
+        } catch (error) {
+          throw new HttpError(503, error instanceof Error ? error.message : "OBS unavailable.", {
+            obs: this.obs.status(),
+          });
+        }
+      }
       if (path === "/api/obs/launch" && request.method === "POST") {
         this.requireAuth(request, url);
         try {
@@ -328,7 +367,9 @@ export class MatchdayServer {
             category: "obs",
             level: result.alreadyRunning ? "info" : "success",
             message: result.alreadyRunning
-              ? "OBS was already running; connection check requested."
+              ? result.processState === "hidden"
+                ? "An OBS process was found without a visible window; no second instance was started."
+                : "OBS was already running; connection check requested."
               : `OBS started from ${result.executablePath}.`,
           });
           return jsonResponse({ ...result, obs: this.obs.status() });
@@ -353,9 +394,38 @@ export class MatchdayServer {
         this.requireAuth(request, url);
         const requestedLimit = Number(url.searchParams.get("limit") ?? 100);
         const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
-          ? Math.min(requestedLimit, MAX_LOG_ENTRIES)
+          ? Math.min(requestedLimit, 1_000)
           : 100;
-        return jsonResponse({ logs: this.logs.slice(-limit).reverse() });
+        const category = url.searchParams.get("category");
+        const level = url.searchParams.get("level");
+        const query = url.searchParams.get("q")?.trim() || undefined;
+        if (category && !isLogCategory(category)) throw new HttpError(400, "Invalid log category.");
+        if (level && !isLogLevel(level)) throw new HttpError(400, "Invalid log level.");
+        return jsonResponse(this.logStore.list({
+          limit,
+          category: category as LogCategory | undefined,
+          level: level as LogLevel | undefined,
+          query,
+        }));
+      }
+      if (path === "/api/logs/export" && request.method === "GET") {
+        this.requireAuth(request, url);
+        const category = url.searchParams.get("category");
+        const level = url.searchParams.get("level");
+        const query = url.searchParams.get("q")?.trim() || undefined;
+        if (category && !isLogCategory(category)) throw new HttpError(400, "Invalid log category.");
+        if (level && !isLogLevel(level)) throw new HttpError(400, "Invalid log level.");
+        const date = new Date().toISOString().slice(0, 10);
+        return textResponse(
+          this.logStore.exportText({
+            category: category as LogCategory | undefined,
+            level: level as LogLevel | undefined,
+            query,
+          }),
+          {
+            "Content-Disposition": `attachment; filename="matchday-events-${date}.log"`,
+          },
+        );
       }
       if (path === "/api/command" && request.method === "POST") {
         this.requireAuth(request, url);
@@ -461,6 +531,7 @@ export class MatchdayServer {
     // OBS WebSocket has no projector-status request. Refresh the Windows
     // window probe before returning health so the UI does not report a
     // projector merely because OBS accepted an earlier request.
+    this.obs.refreshProcessState();
     await this.obs.refreshPreviewProjectorState();
     let filesOk = true;
     let lastError: string | null = null;
@@ -475,14 +546,16 @@ export class MatchdayServer {
       lastError = this.writer.lastError;
     }
     const state = this.store.load().state;
+    const obs = this.obs.status();
     return {
-      status: filesOk ? "ok" : "degraded",
+      checkedAt: new Date().toISOString(),
+      status: filesOk && (!obs.enabled || obs.connected) ? "ok" : "degraded",
       uptime: process.uptime(),
       stateVersion: state?.version ?? null,
       filesOk,
       lastError,
       lastWriteAt: this.writer.lastWriteAt ? new Date(this.writer.lastWriteAt).toISOString() : null,
-      obs: this.obs.status(),
+      obs,
       version: APP_VERSION,
       port: this.port,
     };
@@ -509,14 +582,7 @@ export class MatchdayServer {
   }
 
   private addLog(event: AppLogEvent): void {
-    const entry: LogEntry = {
-      ...event,
-      id: this.nextLogId,
-      at: new Date().toISOString(),
-    };
-    this.nextLogId += 1;
-    this.logs.push(entry);
-    if (this.logs.length > MAX_LOG_ENTRIES) this.logs.splice(0, this.logs.length - MAX_LOG_ENTRIES);
+    this.logStore.add(event);
   }
 
   private describeMatchAction(action: MatchdayCommandAction, state: MatchdayState): string {
@@ -661,6 +727,16 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" },
+  });
+}
+
+function textResponse(body: string, headers: Record<string, string> = {}): Response {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      ...headers,
+    },
   });
 }
 

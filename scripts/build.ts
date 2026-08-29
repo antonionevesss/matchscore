@@ -87,7 +87,7 @@ const result = Bun.spawnSync(
     "--windows-title=Matchday Control",
     "--windows-publisher=Matchday Control contributors",
     "--windows-description=Scoreboard control and OBS scenes",
-    "--windows-version=1.7.1.0",
+    "--windows-version=1.8.0.0",
     "--windows-copyright=Matchday Control contributors",
   ],
   { cwd: root, stdout: "inherit", stderr: "inherit" },
@@ -100,6 +100,7 @@ if (result.exitCode !== 0) {
 for (const file of ["install-service.cmd", "uninstall-service.cmd"]) {
   copyFileSync(join(root, file), join(dist, file));
 }
+copyFileSync(join(root, "CHANGELOG.md"), join(dist, "CHANGELOG.md"));
 
 console.log("[build] complete:");
 console.log(`  ${join(dist, "MatchdayControl.exe")}`);
@@ -107,3 +108,4 @@ console.log(`  ${join(dist, "scoreboard")} (.txt output files)`);
 console.log(`  ${join(dist, "data")} (configuration and internal data)`);
 console.log(`  ${join(dist, "install-service.cmd")}`);
 console.log(`  ${join(dist, "uninstall-service.cmd")}`);
+console.log(`  ${join(dist, "CHANGELOG.md")}`);

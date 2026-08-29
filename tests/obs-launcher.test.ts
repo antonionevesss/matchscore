@@ -16,16 +16,39 @@ test("launcher do OBS não inicia outra instância quando já está aberto", () 
 
 test("launcher do OBS usa o caminho configurado", () => {
   let spawnedPath = "";
+  let spawnedOptions: { cwd: string; detached: boolean; windowsHide: boolean } | undefined;
   const configuredPath = "C:\\OBS\\bin\\64bit\\obs64.exe";
   const result = launchObs(configuredPath, {
     platform: "win32",
     isRunning: () => false,
     exists: (path) => path === configuredPath,
-    spawn: (path) => { spawnedPath = path; },
+    spawn: (path, options) => { spawnedPath = path; spawnedOptions = options; },
   });
 
   assert.deepEqual(result, { alreadyRunning: false, executablePath: configuredPath });
   assert.equal(spawnedPath, configuredPath);
+  assert.deepEqual(spawnedOptions, {
+    cwd: "C:\\OBS\\bin\\64bit",
+    detached: true,
+    windowsHide: false,
+  });
+});
+
+test("launcher do OBS não duplica um processo escondido", () => {
+  let spawned = false;
+  const result = launchObs("C:\\OBS\\obs64.exe", {
+    platform: "win32",
+    processState: () => "hidden",
+    exists: () => true,
+    spawn: () => { spawned = true; },
+  });
+
+  assert.deepEqual(result, {
+    alreadyRunning: true,
+    executablePath: "C:\\OBS\\obs64.exe",
+    processState: "hidden",
+  });
+  assert.equal(spawned, false);
 });
 
 test("launcher do OBS procura a instalação habitual quando não há caminho configurado", () => {

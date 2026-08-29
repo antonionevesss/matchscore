@@ -25,6 +25,7 @@ Matchday Control (Windows)
 - Configurable OBS scene buttons through WebSocket, including initial music.
 - HTTP API and real-time SSE events.
 - Windows scheduled-task support with automatic restart.
+- Clear error, information, and success notifications that can be dismissed quickly by clicking the notification or its close button.
 
 ## Requirements
 
@@ -85,10 +86,11 @@ panel during the build. Run `bun run fonts` after changing a font file.
 
 ### GitHub Releases
 
-Pushing a version tag such as `v1.7.1` starts the Windows release workflow.
+Pushing a version tag such as `v1.8.0` starts the Windows release workflow.
 It validates the tag against `package.json`, runs the typecheck and tests,
 builds the self-contained executable, creates a clean ZIP without runtime
-configuration or match data, and publishes the ZIP to the GitHub Release.
+configuration or match data, includes `CHANGELOG.md`, and publishes the ZIP to
+the GitHub Release with the matching changelog section as its release notes.
 
 Before installing the Windows scheduled task, set a personal PIN:
 
@@ -194,7 +196,9 @@ The OBS card also has an `Open OBS` button. It checks for an existing visible
 OBS window before starting one, then the background WebSocket connection keeps
 trying until OBS is ready. The executable is detected in the usual OBS Studio
 installation folders and PATH; set `obs.executablePath` when OBS is portable or
-installed somewhere else. The card also has an `Open preview · Display 2` button.
+installed somewhere else. OBS is launched as an independent Windows process, so
+closing or restarting Matchday Control does not close OBS with it. The card also
+has an `Open preview · Display 2` button.
 The projector uses
 OBS WebSocket's `OpenVideoMixProjector` request in Preview mode. `monitorIndex`
 follows the order returned by OBS (`0` for the first monitor, `1` for the
@@ -211,11 +215,27 @@ projector-window status query. Opening the projector is idempotent: if an OBS
 projector window is already detected, another request is not sent, avoiding
 duplicate windows.
 
-The control panel includes an Information area below OBS. Its Status tab shows
-the server, output files, OBS endpoint, active scene and projector target. The
-Logs tab keeps the last 200 events of the current session with timestamp,
-category, level and message. The `Refresh` button in this area manually reloads
-the match state, health report and logs.
+The panel also reports whether the OBS process is visible, hidden without a
+usable window, or not detected. When OBS is running, `Bring OBS to front` can
+restore its main window without terminating or starting another process. The
+WebSocket client retries disconnected connections automatically with a
+backoff, and the health check refreshes the process/projector state
+periodically.
+
+The control panel is organized into three top-level pages: `Game` keeps the
+scoreboard, clock, periods and quick OBS scene buttons; `Status` shows the
+server, output files, OBS process/connection, active scene and projector; and
+`Settings` configures the OBS WebSocket connection, executable path, projector
+target and scene buttons without editing JSON. The selected page is kept in the
+URL hash; operational status and diagnostics
+are intentionally concentrated on the `Status` page to avoid repeating the
+same information on `Game` and `Settings`.
+
+The Status page includes manual refresh, OBS recovery actions and structured
+logs from `data/events.jsonl`. Logs survive an application restart and show
+timestamps, category, level and message, with text/type/level filters and
+export. The separate `data/matchday.log` remains the complete console/startup
+diagnostic log.
 
 ### Output files
 
@@ -252,13 +272,16 @@ Private routes use `Authorization: Bearer <token>` after authenticating at
 `POST /api/auth` with the operational PIN.
 
 - `GET /api/health` — operational, output, and OBS status;
-- `GET /api/logs` — recent operational events (authenticated);
+- `GET /api/logs` — recent operational events with optional filters (authenticated);
+- `GET /api/logs/export` — downloads filtered operational events (authenticated);
 - `GET /api/state` — current snapshot;
 - `GET /api/stream` — SSE events;
 - `POST /api/command` — executes a version-controlled action;
 - `POST /api/setup` — creates the initial match; host computer only;
 - `GET/PUT /api/obs/settings` — reads or updates OBS configuration;
 - `POST /api/obs/test` — tests the OBS connection;
+- `POST /api/obs/retry` — immediately retries the OBS connection;
+- `POST /api/obs/focus` — brings the visible OBS window to the foreground;
 - `POST /api/obs/launch` — starts OBS when it is not already running;
 - `POST /api/obs/preview-projector` — opens the OBS Preview projector;
 - `POST /api/obs/scene` — switches to a configured scene.

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { DEFAULT_OBS_CONFIG, normalizeObsConfig, type ObsConfig } from "./config";
 import type { AppLogEvent } from "./log";
+import { detectObsProcessState, type ObsProcessState } from "./obs-launcher";
 import { detectObsPreviewProjectors } from "./windows-projector";
 
 /** Chaves das cenas são configuráveis; os quatro nomes abaixo são os defaults. */
@@ -14,6 +15,7 @@ export interface PreviewProjectorResult {
 export interface ObsWebSocketClientOptions {
   /** Hook kept injectable so the OBS protocol tests do not depend on a desktop. */
   detectPreviewProjectors?: () => Promise<number | null>;
+  detectObsProcessState?: () => ObsProcessState;
   onLog?: (event: AppLogEvent) => void;
 }
 
@@ -28,8 +30,18 @@ export interface ObsStatus {
   previewProjector: NonNullable<ObsConfig["previewProjector"]>;
   /** True/false after Windows confirms the visible projector window; null is unknown. */
   previewProjectorOpen: boolean | null;
+  /** Number of visible OBS preview projector windows in the last probe. */
+  previewProjectorCount: number | null;
+  /** When the Windows projector probe last completed. */
+  previewProjectorLastCheckedAt: string | null;
   currentSceneName: string | null;
   lastError: string | null;
+  lastConnectedAt: string | null;
+  lastDisconnectedAt: string | null;
+  reconnecting: boolean;
+  reconnectAttempt: number;
+  processState: ObsProcessState;
+  processLastCheckedAt: string | null;
 }
 
 interface PendingRequest {
@@ -78,17 +90,25 @@ export class ObsWebSocketClient {
   private autoProjectorAttempted = false;
   private previewProjectorRequested = false;
   private previewProjectorOpen: boolean | null = null;
+  private previewProjectorCount: number | null = null;
+  private previewProjectorLastCheckedAt: string | null = null;
   private previewProjectorOpening: Promise<PreviewProjectorResult> | null = null;
   private lastPreviewProjectorRequestAt = 0;
   private currentSceneName: string | null = null;
   private lastError: string | null = null;
+  private lastConnectedAt: string | null = null;
+  private lastDisconnectedAt: string | null = null;
+  private processState: ObsProcessState = "unknown";
+  private processLastCheckedAt: string | null = null;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly detectProjectors: () => Promise<number | null>;
+  private readonly detectProcess: () => ObsProcessState;
   private readonly onLog: (event: AppLogEvent) => void;
 
   constructor(config?: ObsConfig, options: ObsWebSocketClientOptions = {}) {
     this.config = normalizeObsConfig(config ?? DEFAULT_OBS_CONFIG);
     this.detectProjectors = options.detectPreviewProjectors ?? detectObsPreviewProjectors;
+    this.detectProcess = options.detectObsProcessState ?? detectObsProcessState;
     this.onLog = options.onLog ?? (() => {});
   }
 
@@ -97,8 +117,12 @@ export class ObsWebSocketClient {
     this.currentSceneName = null;
     this.previewProjectorRequested = false;
     this.previewProjectorOpen = null;
+    this.previewProjectorCount = null;
+    this.previewProjectorLastCheckedAt = null;
     this.lastPreviewProjectorRequestAt = 0;
     this.lastError = null;
+    this.processState = "unknown";
+    this.processLastCheckedAt = null;
     this.autoProjectorAttempted = false;
     this.stop();
     this.start();
@@ -120,6 +144,8 @@ export class ObsWebSocketClient {
     this.autoProjectorAttempted = false;
     this.previewProjectorRequested = false;
     this.previewProjectorOpen = null;
+    this.previewProjectorCount = null;
+    this.previewProjectorLastCheckedAt = null;
     this.previewProjectorOpening = null;
     this.lastPreviewProjectorRequestAt = 0;
     this.currentSceneName = null;
@@ -137,9 +163,32 @@ export class ObsWebSocketClient {
       sceneLabels: this.config.sceneLabels ?? {},
       previewProjector: this.config.previewProjector ?? DEFAULT_OBS_CONFIG.previewProjector!,
       previewProjectorOpen: this.previewProjectorOpen,
+      previewProjectorCount: this.previewProjectorCount,
+      previewProjectorLastCheckedAt: this.previewProjectorLastCheckedAt,
       currentSceneName: this.currentSceneName,
       lastError: this.lastError,
+      lastConnectedAt: this.lastConnectedAt,
+      lastDisconnectedAt: this.lastDisconnectedAt,
+      reconnecting: Boolean(this.connecting || this.reconnectTimer),
+      reconnectAttempt: this.reconnectAttempt,
+      processState: this.processState,
+      processLastCheckedAt: this.processLastCheckedAt,
     };
+  }
+
+  refreshProcessState(): ObsProcessState {
+    if (!this.config.enabled) {
+      this.processState = "unknown";
+      this.processLastCheckedAt = new Date().toISOString();
+      return this.processState;
+    }
+    try {
+      this.processState = this.detectProcess();
+    } catch {
+      this.processState = "unknown";
+    }
+    this.processLastCheckedAt = new Date().toISOString();
+    return this.processState;
   }
 
   async setScene(key: ObsSceneKey): Promise<{ sceneKey: ObsSceneKey; sceneName: string }> {
@@ -205,7 +254,19 @@ export class ObsWebSocketClient {
       return null;
     }
 
-    const count = await this.detectProjectors();
+    let count: number | null;
+    try {
+      count = await this.detectProjectors();
+    } catch (error) {
+      this.previewProjectorCount = null;
+      this.previewProjectorLastCheckedAt = new Date().toISOString();
+      this.previewProjectorOpen = null;
+      this.lastError = `Projector check failed: ${asError(error).message}`;
+      this.log("projector", "warning", this.lastError);
+      return null;
+    }
+    this.previewProjectorCount = count;
+    this.previewProjectorLastCheckedAt = new Date().toISOString();
     if (count === null) {
       this.previewProjectorOpen = null;
       return null;
@@ -256,11 +317,13 @@ export class ObsWebSocketClient {
       this.identified = false;
       this.currentSceneName = null;
       this.previewProjectorOpen = null;
+      this.previewProjectorCount = null;
 
       const fail = (error: unknown): void => {
         const reason = asError(error);
         this.lastError = reason.message;
         this.identified = false;
+        this.lastDisconnectedAt = new Date().toISOString();
         this.log("obs", "error", `OBS connection failed: ${reason.message}`);
         if (!settled) {
           settled = true;
@@ -298,6 +361,7 @@ export class ObsWebSocketClient {
         if (message.op === 2) {
           this.identified = true;
           this.lastError = null;
+          this.lastConnectedAt = new Date().toISOString();
           this.reconnectAttempt = 0;
           this.log("obs", "success", "OBS WebSocket connected.");
           void this.syncCurrentScene()
@@ -347,7 +411,9 @@ export class ObsWebSocketClient {
       socket.onclose = () => {
         this.socket = null;
         this.identified = false;
+        this.lastDisconnectedAt = new Date().toISOString();
         this.previewProjectorOpen = null;
+        this.previewProjectorCount = null;
         this.previewProjectorOpening = null;
         this.currentSceneName = null;
         if (!this.stopped) this.log("obs", "warning", "OBS WebSocket connection closed.");
