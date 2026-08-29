@@ -1,11 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { DEFAULT_OBS_CONFIG, normalizeObsConfig, type ObsConfig } from "./config";
 import type { AppLogEvent } from "./log";
-import { detectObsProcessState, type ObsProcessState } from "./obs-launcher";
+import { detectObsProcessState, detectObsProcessStateAsync, type ObsProcessState } from "./obs-launcher";
 import { detectObsPreviewProjectors } from "./windows-projector";
 
-/** Chaves das cenas são configuráveis; os quatro nomes abaixo são os defaults. */
-export const OBS_SCENE_KEYS = ["matchscore", "goal", "sponsors", "music"] as const;
 export type ObsSceneKey = string;
 export interface PreviewProjectorResult {
   monitorIndex: number;
@@ -16,6 +14,7 @@ export interface ObsWebSocketClientOptions {
   /** Hook kept injectable so the OBS protocol tests do not depend on a desktop. */
   detectPreviewProjectors?: () => Promise<number | null>;
   detectObsProcessState?: () => ObsProcessState;
+  detectObsProcessStateAsync?: () => Promise<ObsProcessState>;
   onLog?: (event: AppLogEvent) => void;
 }
 
@@ -103,12 +102,15 @@ export class ObsWebSocketClient {
   private readonly pending = new Map<string, PendingRequest>();
   private readonly detectProjectors: () => Promise<number | null>;
   private readonly detectProcess: () => ObsProcessState;
+  private readonly detectProcessAsync: () => Promise<ObsProcessState>;
   private readonly onLog: (event: AppLogEvent) => void;
+  private processRefresh: Promise<ObsProcessState> | null = null;
 
   constructor(config?: ObsConfig, options: ObsWebSocketClientOptions = {}) {
     this.config = normalizeObsConfig(config ?? DEFAULT_OBS_CONFIG);
     this.detectProjectors = options.detectPreviewProjectors ?? detectObsPreviewProjectors;
     this.detectProcess = options.detectObsProcessState ?? detectObsProcessState;
+    this.detectProcessAsync = options.detectObsProcessStateAsync ?? (() => detectObsProcessStateAsync());
     this.onLog = options.onLog ?? (() => {});
   }
 
@@ -189,6 +191,36 @@ export class ObsWebSocketClient {
     }
     this.processLastCheckedAt = new Date().toISOString();
     return this.processState;
+  }
+
+  /**
+   * Non-blocking process probe used by the periodic health endpoint. Keeping
+   * the PowerShell process asynchronous prevents diagnostics from delaying
+   * the Clock.txt tick loop.
+   */
+  async refreshProcessStateAsync(): Promise<ObsProcessState> {
+    if (!this.config.enabled) {
+      this.processState = "unknown";
+      this.processLastCheckedAt = new Date().toISOString();
+      return this.processState;
+    }
+    if (this.processRefresh) return this.processRefresh;
+
+    const refresh = (async (): Promise<ObsProcessState> => {
+      try {
+        this.processState = await this.detectProcessAsync();
+      } catch {
+        this.processState = "unknown";
+      }
+      this.processLastCheckedAt = new Date().toISOString();
+      return this.processState;
+    })();
+    this.processRefresh = refresh;
+    try {
+      return await refresh;
+    } finally {
+      if (this.processRefresh === refresh) this.processRefresh = null;
+    }
   }
 
   async setScene(key: ObsSceneKey): Promise<{ sceneKey: ObsSceneKey; sceneName: string }> {

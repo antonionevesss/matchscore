@@ -1,7 +1,7 @@
 import type { Server } from "bun";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createInitialState, currentClockSeconds, normalizeTeamName, type MatchdayState } from "./domain/matchday";
+import { createInitialState, currentClockSeconds, MATCHDAY_PERIOD_MAX_SECONDS, normalizeTeamName, type MatchdayState } from "./domain/matchday";
 import { applyCommand, isMatchdayCommandAction, type MatchdayCommandAction } from "./commands";
 import { verifyAccessPassword, verifyToken, signToken, type TokenVerification } from "./auth";
 import { MatchdayStore, ConflictError } from "./store";
@@ -9,10 +9,10 @@ import { TxtWriter } from "./writer";
 import { DEFAULT_OBS_CONFIG, isValidObsSceneKey, normalizeObsConfig, saveObsConfig, type AppConfig, type ObsConfig } from "./config";
 import { ObsWebSocketClient, type ObsSceneKey, type PreviewProjectorResult } from "./obs";
 import { focusObsWindow, launchObs as launchObsProcess, type ObsLaunchResult } from "./obs-launcher";
-import { isLogCategory, isLogLevel, PersistentLogStore, type AppLogEvent, type LogCategory, type LogLevel } from "./log";
+import { isLogCategory, isLogLevel, PersistentLogStore, type AppLogEvent, type LogQuery } from "./log";
 import embeddedUi from "./ui/index.html";
 
-export const APP_VERSION = "1.8.1";
+export const APP_VERSION = "1.8.2";
 
 type BunServer = Server<undefined>;
 
@@ -35,6 +35,8 @@ export interface MatchdaySnapshot {
   clockSeconds: number;
   /** Instante do servidor usado como referência para sincronizar os painéis. */
   serverNowMs: number;
+  /** Limite autoritativo do período atual, partilhado com todos os painéis. */
+  clockMaxSeconds: number;
 }
 
 export interface HealthReport {
@@ -134,6 +136,7 @@ export class MatchdayServer {
       undoAvailable: session.history.length > 0,
       clockSeconds: session.state ? currentClockSeconds(session.state, nowMs) : 0,
       serverNowMs: nowMs,
+      clockMaxSeconds: session.state ? MATCHDAY_PERIOD_MAX_SECONDS[session.state.period] : 0,
     };
   }
 
@@ -404,32 +407,13 @@ export class MatchdayServer {
         const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
           ? Math.min(requestedLimit, 1_000)
           : 100;
-        const category = url.searchParams.get("category");
-        const level = url.searchParams.get("level");
-        const query = url.searchParams.get("q")?.trim() || undefined;
-        if (category && !isLogCategory(category)) throw new HttpError(400, "Invalid log category.");
-        if (level && !isLogLevel(level)) throw new HttpError(400, "Invalid log level.");
-        return jsonResponse(this.logStore.list({
-          limit,
-          category: category as LogCategory | undefined,
-          level: level as LogLevel | undefined,
-          query,
-        }));
+        return jsonResponse(this.logStore.list({ limit, ...parseLogFilters(url) }));
       }
       if (path === "/api/logs/export" && request.method === "GET") {
         this.requireAuth(request, url);
-        const category = url.searchParams.get("category");
-        const level = url.searchParams.get("level");
-        const query = url.searchParams.get("q")?.trim() || undefined;
-        if (category && !isLogCategory(category)) throw new HttpError(400, "Invalid log category.");
-        if (level && !isLogLevel(level)) throw new HttpError(400, "Invalid log level.");
         const date = new Date().toISOString().slice(0, 10);
         return textResponse(
-          this.logStore.exportText({
-            category: category as LogCategory | undefined,
-            level: level as LogLevel | undefined,
-            query,
-          }),
+          this.logStore.exportText(parseLogFilters(url)),
           {
             "Content-Disposition": `attachment; filename="matchday-events-${date}.log"`,
           },
@@ -519,32 +503,30 @@ export class MatchdayServer {
     const session = this.store.load();
     const now = new Date().toISOString();
     const nowMs = Date.parse(now);
-    let next: ReturnType<typeof applyCommand>;
+    let state: MatchdayState;
+    let history: MatchdayState[];
     if (!session.state) {
-      const state = createInitialState(homeTeam, awayTeam, now);
-      this.store.commit(state, []);
-      this.writer.writeState(state, nowMs, true);
-      const snapshot = this.snapshotFromSession({ state, history: [] }, nowMs);
-      this.addLog({ category: "match", level: "success", message: `Match configured: ${homeTeam} vs ${awayTeam}.` });
-      this.broadcast(snapshot);
-      return snapshot;
+      state = createInitialState(homeTeam, awayTeam, now);
+      history = [];
     } else {
-      next = applyCommand(session.state, session.history, { type: "SET_TEAMS", homeTeam, awayTeam }, now);
+      const next = applyCommand(session.state, session.history, { type: "SET_TEAMS", homeTeam, awayTeam }, now);
       if (!next.applied) return this.snapshot();
-      this.store.commit(next.state, next.history);
-      this.writer.writeState(next.state, nowMs, true);
-      const snapshot = this.snapshotFromSession({ state: next.state, history: next.history }, nowMs);
-      this.addLog({ category: "match", level: "success", message: `Match configured: ${homeTeam} vs ${awayTeam}.` });
-      this.broadcast(snapshot);
-      return snapshot;
+      state = next.state;
+      history = next.history;
     }
+    this.store.commit(state, history);
+    this.writer.writeState(state, nowMs, true);
+    const snapshot = this.snapshotFromSession({ state, history }, nowMs);
+    this.addLog({ category: "match", level: "success", message: `Match configured: ${homeTeam} vs ${awayTeam}.` });
+    this.broadcast(snapshot);
+    return snapshot;
   }
 
   async health(): Promise<HealthReport> {
     // OBS WebSocket has no projector-status request. Refresh the Windows
     // window probe before returning health so the UI does not report a
     // projector merely because OBS accepted an earlier request.
-    this.obs.refreshProcessState();
+    await this.obs.refreshProcessStateAsync();
     await this.obs.refreshPreviewProjectorState();
     let filesOk = true;
     let lastError: string | null = null;
@@ -761,6 +743,26 @@ async function jsonObject(request: Request): Promise<Record<string, unknown>> {
     throw new HttpError(400, "The JSON body must be an object.");
   }
   return body as Record<string, unknown>;
+}
+
+function parseLogFilters(url: URL): Pick<LogQuery, "category" | "level" | "query"> {
+  const categoryValue = url.searchParams.get("category");
+  const levelValue = url.searchParams.get("level");
+  let category: LogQuery["category"];
+  let level: LogQuery["level"];
+  if (categoryValue) {
+    if (!isLogCategory(categoryValue)) throw new HttpError(400, "Invalid log category.");
+    category = categoryValue;
+  }
+  if (levelValue) {
+    if (!isLogLevel(levelValue)) throw new HttpError(400, "Invalid log level.");
+    level = levelValue;
+  }
+  return {
+    category,
+    level,
+    query: url.searchParams.get("q")?.trim() || undefined,
+  };
 }
 
 function htmlResponse(body: string): Response {

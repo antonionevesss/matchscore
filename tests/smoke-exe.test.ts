@@ -99,6 +99,8 @@ test("exe compilado: primeiro arranque, controlo, kill -9, restauro, lock", { ti
     assert.match(uiHtml, /--accent: #D6AE58/);
     assert.match(uiHtml, /api\/stream/);
     assert.match(uiHtml, /serverNowMs/);
+    assert.match(uiHtml, /clockMaxSeconds/);
+    assert.doesNotMatch(uiHtml, /const PERIOD_MAX/);
     assert.match(uiHtml, /clockSync/);
     assert.match(uiHtml, /updateClockDisplay/);
     assert.match(uiHtml, /id="dlg-period"/);

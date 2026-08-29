@@ -7,6 +7,7 @@ import { TxtWriter } from "./writer";
 import { MatchdayServer, APP_VERSION } from "./api";
 import { keepSystemAwake } from "./power";
 import { configureDiagnostics, diagnosticError } from "./diagnostics";
+import { isProcessAlive } from "./process";
 
 const WATCHDOG_INTERVAL_MS = 5_000;
 const WATCHDOG_MAX_LAG_MS = 10_000;
@@ -59,19 +60,6 @@ The initial PIN is generated randomly on first run. Save it and change it with
 --set-pin after installing the application.`);
 }
 
-function processAlive(pid: number): boolean {
-  try {
-    const result = Bun.spawnSync(["tasklist", "/FI", `PID eq ${pid}`, "/NH"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    return new RegExp(`\\b${pid}\\b`).test(result.stdout.toString());
-  } catch {
-    // À cautela: se não conseguirmos verificar, assume-se vivo (não duplica).
-    return true;
-  }
-}
-
 function acquireLock(lockPath: string): boolean {
   try {
     writeFileSync(lockPath, String(process.pid), { encoding: "utf8", flag: "wx" });
@@ -84,7 +72,7 @@ function acquireLock(lockPath: string): boolean {
   try {
     staleContent = readFileSync(lockPath, "utf8");
     const pid = Number(staleContent.trim());
-    if (Number.isInteger(pid) && pid > 0 && processAlive(pid)) return false;
+    if (Number.isInteger(pid) && pid > 0 && isProcessAlive(pid)) return false;
   } catch {
     staleContent = "";
   }

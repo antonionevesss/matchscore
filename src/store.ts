@@ -151,10 +151,29 @@ export class MatchdayStore {
 
 function openDatabase(path: string): Database {
   const db = new Database(path);
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA synchronous = NORMAL");
-  db.exec("PRAGMA busy_timeout = 5000");
-  return db;
+  try {
+    db.exec("PRAGMA journal_mode = WAL");
+    db.exec("PRAGMA synchronous = NORMAL");
+    db.exec("PRAGMA busy_timeout = 5000");
+    return db;
+  } catch (error) {
+    try {
+      db.close();
+    } catch {
+      // Melhor esforço: preserva o erro original da abertura.
+    }
+    throw error;
+  }
+}
+
+function hasValidPersistedState(db: Database): boolean {
+  const row = db.query("SELECT state_json FROM state WHERE id = 1").get() as { state_json: string } | null;
+  if (!row) return true;
+  try {
+    return isMatchdayState(JSON.parse(row.state_json) as unknown);
+  } catch {
+    return false;
+  }
 }
 
 function isDatabaseUsable(dbPath: string): boolean {
@@ -164,12 +183,7 @@ function isDatabaseUsable(dbPath: string): boolean {
   try {
     probe = openDatabase(dbPath);
     migrate(probe);
-    const row = probe.query("SELECT state_json FROM state WHERE id = 1").get() as { state_json: string } | null;
-    if (row) {
-      const parsed = JSON.parse(row.state_json) as unknown;
-      if (!isMatchdayState(parsed)) return false;
-    }
-    return true;
+    return hasValidPersistedState(probe);
   } catch {
     return false;
   } finally {
@@ -193,14 +207,13 @@ function restoreFromBackup(dbPath: string, backups: [string, string]): boolean {
   for (const backup of backups) {
     if (!existsSync(backup)) continue;
     if (!looksLikeSqlite(backup)) continue;
+    let candidate: Database | null = null;
     try {
-      const candidate = openDatabase(backup);
-      const row = candidate.query("SELECT state_json FROM state WHERE id = 1").get() as
-        | { state_json: string }
-        | null;
-      const valid = !row || isMatchdayState(JSON.parse(row.state_json));
+      candidate = openDatabase(backup);
+      migrate(candidate);
+      if (!hasValidPersistedState(candidate)) continue;
       candidate.close();
-      if (!valid) continue;
+      candidate = null;
       copyFileSync(backup, dbPath);
       // Remove sidecars WAL antigos para não contaminarem o ficheiro restaurado.
       for (const sidecar of [`${dbPath}-wal`, `${dbPath}-shm`]) {
@@ -213,6 +226,8 @@ function restoreFromBackup(dbPath: string, backups: [string, string]): boolean {
       return true;
     } catch {
       continue;
+    } finally {
+      candidate?.close();
     }
   }
   return false;

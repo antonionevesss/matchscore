@@ -314,26 +314,8 @@
     .obs-card .section-label { margin-bottom: 10px; }
 
     /* ---------- Information ---------- */
-    .info-card { display: grid; gap: 16px; }
     .info-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
     .info-card__description { color: var(--dim); font-size: 12px; margin-top: 5px; }
-    .info-card__actions { display: flex; align-items: center; gap: 8px; }
-    .info-refresh { min-height: 34px; padding: 0 11px; border: 1px solid var(--border); border-radius: 7px; color: var(--dim); font-size: 11px; font-weight: 700; white-space: nowrap; }
-    .info-refresh:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
-    .info-refresh:disabled { opacity: .65; cursor: wait; }
-    .info-tabs { display: flex; gap: 4px; padding: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
-    .info-tab { min-height: 34px; padding: 0 12px; border-radius: 7px; color: var(--dim); font-size: 11px; font-weight: 700; }
-    .info-tab.is-active { background: var(--accent); color: var(--accent-contrast); }
-    .info-tab__count { display: inline-block; min-width: 17px; margin-left: 4px; padding: 1px 4px; border-radius: 9px; background: rgba(255,255,255,.12); font-size: 10px; }
-    .info-tab.is-active .info-tab__count { background: rgba(8,19,33,.16); }
-    .info-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-    .info-item { min-width: 0; padding: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
-    .info-item__label { display: block; color: var(--dim); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
-    .info-item__value { display: block; margin-top: 5px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .info-item__value.is-success { color: #86efac; }
-    .info-item__value.is-warning { color: #fcd34d; }
-    .info-item__value.is-error { color: #fca5a5; }
-    .info-item__detail { display: block; color: var(--dim); font-size: 10px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .logs-toolbar { display: grid; grid-template-columns: minmax(160px, 1fr) repeat(2, minmax(110px, .5fr)) auto auto; gap: 8px; align-items: center; }
     .logs-toolbar input, .logs-toolbar select, .settings-form input, .settings-form select { min-width: 0; min-height: 38px; padding: 8px 10px; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 11px; }
     .logs-toolbar .btn { min-height: 38px; padding: 8px 10px; font-size: 10px; }
@@ -382,7 +364,6 @@
     .status-card__value.is-error { color: #FF9F9F; }
     .status-toolbar { display: flex; justify-content: flex-end; }
     .status-toolbar .btn { min-height: 40px; }
-    .status-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 14px; }
     .status-panel { display: grid; gap: 14px; }
     .settings-page .card { margin-bottom: 0; }
     .settings-page .settings-form { max-width: 980px; }
@@ -515,11 +496,6 @@
       .board .quick-obs-card { order: 5; }
       .board .actions-card { order: 6; }
       .info-card__header { flex-direction: column; }
-      .info-card__actions { width: 100%; }
-      .info-refresh { flex: 1; }
-      .info-tabs { width: 100%; }
-      .info-tab { flex: 1; }
-      .info-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .log-row { grid-template-columns: 132px 1fr; gap: 7px; }
       .log-message { grid-column: 2; }
       .logs-toolbar { grid-template-columns: 1fr 1fr; }
@@ -607,22 +583,13 @@
         "nav.game": "Game",
         "nav.status": "Status",
         "nav.settings": "Settings",
-        "page.game.kicker": "Live operation",
-        "page.game.title": "Match control",
-        "page.game.description": "The essential controls for the scoreboard, clock and live OBS scenes.",
-        "page.status.kicker": "Monitoring",
         "page.status.title": "System status",
-        "page.status.description": "Check the control service, OBS, projector, output files and operational events.",
-        "page.settings.kicker": "Configuration",
-        "page.settings.title": "OBS settings",
-        "page.settings.description": "Configure the OBS connection, preview projector and live scene buttons.",
         "status.health": "Service health",
         "status.output": "Output files",
         "status.obs": "OBS connection",
         "status.projector": "Preview projector",
         "status.activeScene": "Active scene",
         "status.lastCheck": "Last health check",
-        "status.actions": "Diagnostics",
         "status.refreshAll": "Refresh all",
         "status.refreshing": "Refreshing…",
         "status.logs": "Operational logs",
@@ -679,14 +646,12 @@
         "reset.confirmation": "Reset the score and clock for {home} vs {away}?",
         "obs.title": "OBS control",
         "obs.scenes": "OBS scenes",
-        "obs.off": "Not configured",
         "obs.notConfigured": "Not configured",
         "obs.connection": "Connection",
         "obs.sceneActive": "Active scene",
         "obs.projectorWindow": "Preview window",
         "obs.connectedShort": "Connected",
         "obs.notAvailable": "Not available",
-        "obs.connected": "Connected · active: {scene}",
         "obs.disconnected": "Disconnected",
         "obs.readyScene": "scene ready",
         "obs.scene.matchscore": "MATCH SCORE",
@@ -720,31 +685,16 @@
         "obs.preview.alreadyOpenNotice": "Preview is already open on Display {display}.",
         "obs.preview.windowAlreadyOpenNotice": "Preview projector is already open.",
         "obs.preview.requestAccepted": "OBS accepted the request; checking the projector window…",
-        "obs.projector.open": "Projector: OPEN (confirmed)",
-        "obs.projector.notOpen": "Projector: NOT DETECTED",
-        "obs.projector.unknown": "Projector: state not confirmed",
-        "obs.projector.disabled": "Projector: disabled",
         "obs.projector.openShort": "OPEN · confirmed",
         "obs.projector.notOpenShort": "NOT DETECTED",
         "obs.projector.unknownShort": "CHECKING",
         "obs.projector.disabledShort": "DISABLED",
-        "info.title": "Information",
         "info.description": "Current server, output and OBS status.",
-        "info.statusTab": "Status",
-        "info.logsTab": "Logs",
-        "info.settingsTab": "OBS settings",
-        "info.refresh": "Refresh",
         "info.refreshing": "Refreshing…",
         "info.refreshed": "Information refreshed.",
-        "info.lastCheck": "Last check",
         "info.neverChecked": "Not checked yet",
-        "info.server": "Control server",
-        "info.output": "Output files",
         "info.lastWrite": "Last file update",
         "info.version": "Version",
-        "info.obsEndpoint": "OBS endpoint",
-        "info.projectorTarget": "Projector target",
-        "info.online": "Online",
         "info.offline": "Offline",
         "info.reconnecting": "Reconnecting…",
         "info.ready": "Ready",
@@ -753,15 +703,11 @@
         "info.noValue": "—",
         "info.display": "Display {display}",
         "info.windowed": "Windowed",
-        "info.projectorCount": "{count} projector window(s) detected",
-        "info.logCount": "{count} events",
         "info.noLogs": "No events recorded yet.",
         "info.type.system": "SYSTEM",
         "info.type.obs": "OBS",
         "info.type.projector": "PROJECTOR",
         "info.type.match": "MATCH",
-        "settings.title": "OBS settings",
-        "settings.description": "Configure the OBS connection, projector and scene buttons.",
         "settings.enabled": "Enable OBS integration",
         "settings.host": "WebSocket host",
         "settings.port": "WebSocket port",
@@ -794,7 +740,6 @@
         "logs.allLevels": "All levels",
         "logs.apply": "Apply filters",
         "logs.export": "Export",
-        "logs.exporting": "Exporting…",
         "logs.total": "{count} events",
         "score.remove": "Remove {side} goal",
         "score.mark": "Score for {side}",
@@ -825,22 +770,13 @@
         "nav.game": "Jogo",
         "nav.status": "Estado",
         "nav.settings": "Configurações",
-        "page.game.kicker": "Operação ao vivo",
-        "page.game.title": "Controlo do jogo",
-        "page.game.description": "Os controlos essenciais do marcador, relógio e cenas OBS em direto.",
-        "page.status.kicker": "Monitorização",
         "page.status.title": "Estado do sistema",
-        "page.status.description": "Verifica o serviço de controlo, OBS, projetor, ficheiros de saída e eventos operacionais.",
-        "page.settings.kicker": "Configuração",
-        "page.settings.title": "Configuração OBS",
-        "page.settings.description": "Configura a ligação ao OBS, o projetor de pré-visualização e os botões das cenas.",
         "status.health": "Saúde do serviço",
         "status.output": "Ficheiros de saída",
         "status.obs": "Ligação ao OBS",
         "status.projector": "Projetor de pré-visualização",
         "status.activeScene": "Cena ativa",
         "status.lastCheck": "Última verificação",
-        "status.actions": "Diagnóstico",
         "status.refreshAll": "Atualizar tudo",
         "status.refreshing": "A atualizar…",
         "status.logs": "Logs operacionais",
@@ -897,14 +833,12 @@
         "reset.confirmation": "Confirmas que queres repor o resultado e o relógio de {home} vs {away}?",
         "obs.title": "Controlo OBS",
         "obs.scenes": "Cenas OBS",
-        "obs.off": "Não configurado",
         "obs.notConfigured": "Não configurado",
         "obs.connection": "Ligação",
         "obs.sceneActive": "Cena ativa",
         "obs.projectorWindow": "Janela de pré-visualização",
         "obs.connectedShort": "Ligado",
         "obs.notAvailable": "Não disponível",
-        "obs.connected": "Ligado · cena ativa: {scene}",
         "obs.disconnected": "Desligado",
         "obs.readyScene": "cena pronta",
         "obs.scene.matchscore": "MARCADOR",
@@ -938,31 +872,16 @@
         "obs.preview.alreadyOpenNotice": "A pré-visualização já está aberta no ecrã {display}.",
         "obs.preview.windowAlreadyOpenNotice": "O projetor de pré-visualização já está aberto.",
         "obs.preview.requestAccepted": "O OBS aceitou o pedido; a verificar a janela do projetor…",
-        "obs.projector.open": "Projetor: ABERTO (confirmado)",
-        "obs.projector.notOpen": "Projetor: NÃO DETETADO",
-        "obs.projector.unknown": "Projetor: estado não confirmado",
-        "obs.projector.disabled": "Projetor: desativado",
         "obs.projector.openShort": "ABERTO · confirmado",
         "obs.projector.notOpenShort": "NÃO DETETADO",
         "obs.projector.unknownShort": "A VERIFICAR",
         "obs.projector.disabledShort": "DESATIVADO",
-        "info.title": "Informação",
         "info.description": "Estado atual do servidor, ficheiros e OBS.",
-        "info.statusTab": "Estado",
-        "info.logsTab": "Logs",
-        "info.settingsTab": "Configuração OBS",
-        "info.refresh": "Atualizar",
         "info.refreshing": "A atualizar…",
         "info.refreshed": "Informação atualizada.",
-        "info.lastCheck": "Última verificação",
         "info.neverChecked": "Ainda não verificado",
-        "info.server": "Servidor de controlo",
-        "info.output": "Ficheiros de saída",
         "info.lastWrite": "Última atualização",
         "info.version": "Versão",
-        "info.obsEndpoint": "Endpoint do OBS",
-        "info.projectorTarget": "Destino do projetor",
-        "info.online": "Ligado",
         "info.offline": "Desligado",
         "info.reconnecting": "A religar…",
         "info.ready": "Pronto",
@@ -971,15 +890,11 @@
         "info.noValue": "—",
         "info.display": "Ecrã {display}",
         "info.windowed": "Janela",
-        "info.projectorCount": "{count} janela(s) de projetor detetada(s)",
-        "info.logCount": "{count} eventos",
         "info.noLogs": "Ainda não existem eventos registados.",
         "info.type.system": "SISTEMA",
         "info.type.obs": "OBS",
         "info.type.projector": "PROJETOR",
         "info.type.match": "JOGO",
-        "settings.title": "Configuração OBS",
-        "settings.description": "Configura a ligação ao OBS, o projetor e os botões das cenas.",
         "settings.enabled": "Ativar integração com OBS",
         "settings.host": "Host WebSocket",
         "settings.port": "Porta WebSocket",
@@ -1012,7 +927,6 @@
         "logs.allLevels": "Todos os níveis",
         "logs.apply": "Aplicar filtros",
         "logs.export": "Exportar",
-        "logs.exporting": "A exportar…",
         "logs.total": "{count} eventos",
         "score.remove": "Remover golo {side}",
         "score.mark": "Marcar golo {side}",
@@ -1077,17 +991,6 @@
       clockSync: null,
     };
 
-    const PERIOD_MAX = {
-      PRE_MATCH: 0,
-      FIRST_HALF: 45 * 60,
-      HALF_TIME: 45 * 60,
-      SECOND_HALF: 90 * 60,
-      EXTRA_FIRST_HALF: 105 * 60,
-      EXTRA_HALF_TIME: 105 * 60,
-      EXTRA_SECOND_HALF: 120 * 60,
-      FULL_TIME: 90 * 60,
-      EXTRA_FULL_TIME: 120 * 60,
-    };
     const PLAYING = new Set(["FIRST_HALF", "SECOND_HALF", "EXTRA_FIRST_HALF", "EXTRA_SECOND_HALF"]);
     const PERIOD_LABEL_KEYS = {
       PRE_MATCH: "period.preMatch",
@@ -1120,6 +1023,11 @@
 
     function periodLabel(period) {
       return t(PERIOD_LABEL_KEYS[period] || period);
+    }
+
+    function clockMaxSeconds() {
+      const max = Number(ui.snapshot?.clockMaxSeconds);
+      return Number.isFinite(max) && max >= 0 ? Math.floor(max) : 0;
     }
 
     function languageSelectorHtml() {
@@ -1207,11 +1115,11 @@
       if (state.clockRunning && Number.isFinite(started)) {
         const elapsed = Math.max(0, Math.floor((estimatedServerNowMs() - started) / 1000));
         const raw = state.clockBaseSeconds + elapsed;
-        return Math.min(PERIOD_MAX[state.period] ?? 0, Math.max(0, raw));
+        return Math.min(clockMaxSeconds(), Math.max(0, raw));
       }
 
       if (Number.isFinite(serverClock)) return Math.max(0, Math.floor(serverClock));
-      return Math.min(PERIOD_MAX[state.period] ?? 0, Math.max(0, state.clockBaseSeconds));
+      return Math.min(clockMaxSeconds(), Math.max(0, state.clockBaseSeconds));
     }
 
     function formatClock(total) {
@@ -1294,6 +1202,7 @@
       ui.snapshot = {
         state: nextState,
         clockSeconds: Number.isFinite(payloadClock) ? payloadClock : undefined,
+        clockMaxSeconds: Number.isFinite(Number(payload?.clockMaxSeconds)) ? Number(payload.clockMaxSeconds) : undefined,
       };
       if (!nextState) ui.teamDraft = null;
       return true;
@@ -1484,6 +1393,7 @@
           state.version,
         ],
         ui.snapshot?.clockSeconds,
+        ui.snapshot?.clockMaxSeconds,
         ui.setupAllowed,
         ui.page,
         ui.busy,
@@ -1580,7 +1490,7 @@
       }
       const clock = formatClock(clockSeconds());
       const running = state.clockRunning;
-      const periodMax = PERIOD_MAX[state.period] ?? 0;
+      const periodMax = clockMaxSeconds();
       const atLimit = clockSeconds() >= periodMax;
       const toggleDisabled = ui.busy || (!running && (!PLAYING.has(state.period) || atLimit));
       const teamDraft = ui.teamDraft ?? { home: state.homeTeam, away: state.awayTeam };
@@ -1961,15 +1871,6 @@
       });
     }
 
-    function formatLogTime(value) {
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return t("info.noValue");
-      return date.toLocaleString(ui.language === "pt-PT" ? "pt-PT" : "en-GB", {
-        dateStyle: "short",
-        timeStyle: "medium",
-      });
-    }
-
     function logCategoryLabel(category) {
       const known = ["system", "obs", "projector", "match"];
       return t(known.includes(category) ? `info.type.${category}` : "info.type.system");
@@ -1995,7 +1896,7 @@
         ${logs.map((entry) => {
           const level = ["success", "warning", "error"].includes(entry.level) ? entry.level : "info";
           return `<div class="log-row" data-level="${esc(level)}">
-            <time class="log-time" datetime="${esc(entry.at)}">${esc(formatLogTime(entry.at))}</time>
+            <time class="log-time" datetime="${esc(entry.at)}">${esc(formatDateTime(entry.at))}</time>
             <span class="log-type ${esc(`is-${level}`)}">${esc(logCategoryLabel(entry.category))}</span>
             <span class="log-message" title="${esc(entry.message)}">${esc(entry.message)}</span>
           </div>`;
@@ -2198,10 +2099,11 @@
     function bindSettingsControls() {
       const form = $("obs-settings-form");
       form?.addEventListener("submit", (event) => void saveObsSettings(event));
-      form?.querySelectorAll("input, select").forEach((element) =>
-        element.addEventListener("input", () => { ui.settingsDirty = true; }));
-      form?.querySelectorAll("input, select").forEach((element) =>
-        element.addEventListener("change", () => { ui.settingsDirty = true; }));
+      const markSettingsDirty = () => { ui.settingsDirty = true; };
+      form?.querySelectorAll("input, select").forEach((element) => {
+        element.addEventListener("input", markSettingsDirty);
+        element.addEventListener("change", markSettingsDirty);
+      });
       $("scene-add")?.addEventListener("click", addSceneEditorRow);
       $("obs-settings-test")?.addEventListener("click", () => void testObsConnection());
       bindSceneRemoveButtons();
@@ -2397,14 +2299,14 @@
 
     function adjustClock(direction) {
       const state = ui.snapshot?.state;
-      if (!state || (PERIOD_MAX[state.period] ?? 0) === 0) return;
+      if (!state || clockMaxSeconds() === 0) return;
       const step = Number(ui.clockStep) || 1;
       send({ type: "ADJUST_CLOCK", deltaSeconds: direction * step });
     }
 
     function openClock() {
       const state = ui.snapshot.state;
-      const periodMax = PERIOD_MAX[state.period] ?? 0;
+      const periodMax = clockMaxSeconds();
       const total = clockSeconds();
       $("clock-min").value = String(Math.floor(total / 60));
       $("clock-sec").value = String(total % 60).padStart(2, "0");
@@ -2423,7 +2325,7 @@
         render();
         return;
       }
-      const periodMax = PERIOD_MAX[ui.snapshot.state.period] ?? 0;
+      const periodMax = clockMaxSeconds();
       const total = Math.min(periodMax, minutes * 60 + seconds);
       $("dlg-clock").close();
       send({ type: "SET_CLOCK", seconds: total });

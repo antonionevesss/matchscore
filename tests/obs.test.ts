@@ -174,3 +174,32 @@ test("cliente OBS desativado não tenta ligar", async () => {
   await assert.rejects(() => client.setScene("matchscore"), /disabled/);
   client.stop();
 });
+
+test("verificação assíncrona do processo não bloqueia e atualiza o estado", async () => {
+  let checks = 0;
+  const client = new ObsWebSocketClient({
+    enabled: true,
+    host: "127.0.0.1",
+    port: 4455,
+    password: "",
+    scenes: { matchscore: "Marcador" },
+    previewProjector: { enabled: true, monitorIndex: 1, autoOpen: false },
+  }, {
+    detectObsProcessStateAsync: async () => {
+      checks += 1;
+      await Bun.sleep(5);
+      return "visible";
+    },
+    detectPreviewProjectors: async () => 0,
+  });
+
+  const [first, second] = await Promise.all([
+    client.refreshProcessStateAsync(),
+    client.refreshProcessStateAsync(),
+  ]);
+  assert.equal(first, "visible");
+  assert.equal(second, "visible");
+  assert.equal(checks, 1);
+  assert.equal(client.status().processState, "visible");
+  assert.ok(client.status().processLastCheckedAt);
+});

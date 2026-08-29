@@ -560,6 +560,7 @@ test("snapshot e Clock.txt usam o mesmo segundo autoritativo do servidor", async
     assert.equal(readFileSync(join(harness.outputDir, "Clock.txt"), "utf8"), "45:01");
     const snapshot = harness.app.snapshot(expectedNow);
     assert.equal(snapshot.clockSeconds, 45 * 60 + 1);
+    assert.equal(snapshot.clockMaxSeconds, 90 * 60);
     assert.equal(snapshot.serverNowMs, expectedNow);
   } finally {
     await harness.stop();

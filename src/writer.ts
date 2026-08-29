@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { currentClockSeconds, formatMatchdayClock, type MatchdayState } from "./domain/matchday";
 
@@ -58,26 +58,6 @@ export class TxtWriter {
   /** Último valor que nós escrevemos para um ficheiro (undefined = nunca). */
   lastValue(key: keyof TxtFileNames): string | undefined {
     return this.last.get(key);
-  }
-
-  /** Obriga a próxima escrita a repor o valor (usado no push-back do relógio). */
-  invalidate(key: keyof TxtFileNames): void {
-    this.last.delete(key);
-  }
-
-  /**
-   * Inicializa o cache com o conteúdo atual dos ficheiros no disco, para
-   * nunca reescrever valores idênticos.
-   */
-  seedFromDisk(): void {
-    for (const key of Object.keys(this.files) as Array<keyof TxtFileNames>) {
-      try {
-        const content = readFileSync(join(this.outputDir, this.files[key]), "utf8");
-        this.last.set(key, content);
-      } catch {
-        // ficheiro ainda não existe
-      }
-    }
   }
 
   /** Reescreve os ficheiros cujo valor mudou; force=true reescreve todos. */

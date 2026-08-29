@@ -14,7 +14,7 @@ export type MatchdayPeriod = (typeof MATCHDAY_PERIODS)[number];
 /**
  * Períodos em que o relógio pode correr (os restantes são paragens).
  */
-export const MATCHDAY_PLAYING_PERIODS: readonly MatchdayPeriod[] = [
+const MATCHDAY_PLAYING_PERIODS: readonly MatchdayPeriod[] = [
   "FIRST_HALF",
   "SECOND_HALF",
   "EXTRA_FIRST_HALF",
@@ -63,15 +63,6 @@ const PERIOD_TRANSITIONS: Record<MatchdayPeriod, PeriodTransition> = {
   FULL_TIME: { baseSeconds: REGULAR_MATCH_SECONDS, running: false, repeatBaseSeconds: REGULAR_MATCH_SECONDS },
   EXTRA_FULL_TIME: { baseSeconds: EXTRA_MATCH_SECONDS, running: false, repeatBaseSeconds: EXTRA_MATCH_SECONDS },
 };
-
-/** Valores absolutos usados pelos estados de intervalo/fim. */
-export const MATCHDAY_PERIOD_FIXED_SECONDS: Partial<Record<MatchdayPeriod, number>> = Object.fromEntries(
-  Object.entries(PERIOD_TRANSITIONS)
-    .filter((entry): entry is [MatchdayPeriod, PeriodTransition & { repeatBaseSeconds: number }] =>
-      entry[1].repeatBaseSeconds !== undefined,
-    )
-    .map(([period, transition]) => [period, transition.repeatBaseSeconds]),
-) as Partial<Record<MatchdayPeriod, number>>;
 
 export const MATCHDAY_HISTORY_LIMIT = 30;
 

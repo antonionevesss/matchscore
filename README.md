@@ -86,7 +86,7 @@ panel during the build. Run `bun run fonts` after changing a font file.
 
 ### GitHub Releases
 
-Pushing a version tag such as `v1.8.1` starts the Windows release workflow.
+Pushing a version tag such as `v1.8.2` starts the Windows release workflow.
 It validates the tag against `package.json`, runs the typecheck and tests,
 builds the self-contained executable, creates a clean ZIP without runtime
 configuration or match data, includes `CHANGELOG.md`, and publishes the ZIP to

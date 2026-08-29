@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { embedFonts } from "./embed-fonts.ts";
+import { isProcessAlive } from "../src/process";
 
 const root = resolve(import.meta.dir, "..");
 const dist = join(root, "dist");
@@ -25,20 +26,11 @@ for (const file of ["config.json", "matchday.db", "matchday.db-shm", "matchday.d
   migrateRuntimeFile(file);
 }
 
-function processAlive(pid: number): boolean {
-  try {
-    const result = Bun.spawnSync(["tasklist", "/FI", `PID eq ${pid}`, "/NH"], { stdout: "pipe", stderr: "ignore" });
-    return new RegExp(`\\b${pid}\\b`).test(result.stdout.toString());
-  } catch {
-    return true;
-  }
-}
-
 function removeStaleLock(lockPath: string): void {
   if (!existsSync(lockPath)) return;
   try {
     const pid = Number(readFileSync(lockPath, "utf8").trim());
-    if (Number.isInteger(pid) && pid > 0 && processAlive(pid)) return;
+    if (Number.isInteger(pid) && pid > 0 && isProcessAlive(pid)) return;
     unlinkSync(lockPath);
     console.log(`[build] removed stale lock: ${lockPath}`);
   } catch {
@@ -87,7 +79,7 @@ const result = Bun.spawnSync(
     "--windows-title=Matchday Control",
     "--windows-publisher=Matchday Control contributors",
     "--windows-description=Scoreboard control and OBS scenes",
-    "--windows-version=1.8.1.0",
+    "--windows-version=1.8.2.0",
     "--windows-copyright=Matchday Control contributors",
   ],
   { cwd: root, stdout: "inherit", stderr: "inherit" },

@@ -26,6 +26,11 @@ export interface ObsLauncherDependencies {
 }
 
 const OBS_PROCESS_NAMES = ["obs64.exe", "obs.exe"];
+const OBS_PROCESS_STATE_COMMAND =
+  "$processes = @(Get-Process -Name obs64,obs -ErrorAction SilentlyContinue); " +
+  "if ($processes.Count -eq 0) { 'notDetected' } " +
+  "elseif (@($processes | Where-Object { $_.MainWindowHandle -ne 0 }).Count -gt 0) { 'visible' } " +
+  "else { 'hidden' }";
 
 /**
  * Starts OBS on Windows without creating a second instance when a visible OBS
@@ -125,16 +130,71 @@ export function detectObsProcessState(platform: NodeJS.Platform = process.platfo
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$processes = @(Get-Process -Name obs64,obs -ErrorAction SilentlyContinue); if ($processes.Count -eq 0) { 'notDetected' } elseif (@($processes | Where-Object { $_.MainWindowHandle -ne 0 }).Count -gt 0) { 'visible' } else { 'hidden' }",
+        OBS_PROCESS_STATE_COMMAND,
       ],
       { stdout: "pipe", stderr: "ignore", windowsHide: true },
     );
     if (result.exitCode !== 0) return "unknown";
-    const state = result.stdout.toString().trim();
-    return state === "visible" || state === "hidden" || state === "notDetected" ? state : "unknown";
+    return parseObsProcessState(result.stdout.toString());
   } catch {
     return "unknown";
   }
+}
+
+/**
+ * Async counterpart used by the periodic health check. The synchronous
+ * detector is kept for the launch guard, but it must not pause the server's
+ * event loop while Clock.txt is being updated.
+ */
+export async function detectObsProcessStateAsync(
+  platform: NodeJS.Platform = process.platform,
+): Promise<ObsProcessState> {
+  if (platform !== "win32") return "unknown";
+
+  let child: ReturnType<typeof Bun.spawn>;
+  try {
+    child = Bun.spawn(
+      [
+        "powershell.exe",
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        OBS_PROCESS_STATE_COMMAND,
+      ],
+      { stdout: "pipe", stderr: "ignore", windowsHide: true },
+    );
+  } catch {
+    return "unknown";
+  }
+
+  const timeout = setTimeout(() => {
+    try {
+      child.kill();
+    } catch {
+      // O processo pode já ter terminado.
+    }
+  }, 2_000);
+
+  try {
+    const [stdout, exitCode] = await Promise.all([
+      typeof child.stdout === "number" ? Promise.resolve("") : new Response(child.stdout).text(),
+      child.exited,
+    ]);
+    if (exitCode !== 0) return "unknown";
+    return parseObsProcessState(stdout);
+  } catch {
+    return "unknown";
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function parseObsProcessState(output: string): ObsProcessState {
+  const state = output.trim();
+  return state === "visible" || state === "hidden" || state === "notDetected" ? state : "unknown";
 }
 
 export function focusObsWindow(platform: NodeJS.Platform = process.platform): boolean {

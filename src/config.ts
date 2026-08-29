@@ -217,6 +217,10 @@ function writeConfigFile(configPath: string, payload: Record<string, unknown>): 
   }
 }
 
+function readJsonFile(configPath: string): unknown {
+  return JSON.parse(readFileSync(configPath, "utf8").replace(/^\uFEFF/, ""));
+}
+
 function configPayload(config: AppConfig): Record<string, unknown> {
   return {
     outputDir: config.outputDir,
@@ -233,7 +237,7 @@ function configPayload(config: AppConfig): Record<string, unknown> {
 export function saveObsConfig(config: AppConfig, obs: ObsConfig): void {
   let payload: Record<string, unknown>;
   if (existsSync(config.configPath)) {
-    payload = JSON.parse(readFileSync(config.configPath, "utf8").replace(/^\uFEFF/, "")) as Record<string, unknown>;
+    payload = readJsonFile(config.configPath) as Record<string, unknown>;
   } else {
     payload = configPayload(config);
   }
@@ -251,7 +255,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     const pin = options.setPin.trim();
     if (!isValidAccessPin(pin)) throw new Error("The PIN must contain exactly 6 digits.");
     const config = loadConfig({ configPath });
-    const payload = JSON.parse(readFileSync(config.configPath, "utf8").replace(/^\uFEFF/, "")) as Record<string, unknown>;
+    const payload = readJsonFile(config.configPath) as Record<string, unknown>;
     payload.accessPinHash = hashAccessPassword(pin);
     writeConfigFile(config.configPath, payload);
     try {
@@ -266,7 +270,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   if (existsSync(configPath)) {
     let raw: unknown;
     try {
-      raw = JSON.parse(readFileSync(configPath, "utf8").replace(/^\uFEFF/, ""));
+      raw = readJsonFile(configPath);
     } catch (error) {
       throw new Error(`Invalid configuration at ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
     }

@@ -128,15 +128,6 @@ export function configureDiagnostics(options: { configPath?: string; logPath?: s
   return activeLogPath;
 }
 
-export function diagnosticLog(level: DiagnosticLevel, message: string, error?: unknown): void {
-  const suffix = error === undefined ? "" : `\n${formatValue(error)}`;
-  append(level, `${message}${suffix}`);
-}
-
 export function diagnosticError(error: unknown): string {
   return formatValue(error);
-}
-
-export function diagnosticLogPath(): string | null {
-  return activeLogPath;
 }
